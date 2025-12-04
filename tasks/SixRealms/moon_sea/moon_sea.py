@@ -104,10 +104,10 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
             self.screenshot()
             if self.in_main():
                 break
+            if self.appear_then_click(self.I_MCONINUE, interval=1):
+                continue
             if self.appear(self.I_SELECT_SHIKIGAMI_AND_CONFIRM):
                 self.select_shikigami_and_confirm()
-                continue
-            if self.appear_then_click(self.I_MCONINUE, interval=1):
                 continue
 
     def _start(self):
