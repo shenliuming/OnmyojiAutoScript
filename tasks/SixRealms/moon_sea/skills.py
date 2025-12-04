@@ -44,6 +44,9 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
                 self.device.stuck_record_clear()
                 self.device.stuck_record_add('BATTLE_STATUS_S')
                 continue
+            if self.appear(self.I_SELECT_SHIKIGAMI_AND_CONFIRM):
+                self.select_shikigami_and_confirm()
+                continue
         self.device.stuck_record_clear()
 
     @cached_property
