@@ -4,5 +4,8 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 foster-domain = { path = "../domain" }
 foster-protocol = { path = "../protocol" }
+thiserror.workspace = true
+tokio.workspace = true
