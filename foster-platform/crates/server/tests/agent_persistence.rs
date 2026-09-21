@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use foster_protocol::{
-    AgentEnvelope, AgentEvent, AgentHello, EmulatorDescriptor,
-    EmulatorSnapshot, Heartbeat, PROTOCOL_VERSION,
+    AgentEnvelope, AgentEvent, AgentHello, EmulatorDescriptor, EmulatorSnapshot, Heartbeat,
+    PROTOCOL_VERSION,
 };
 use foster_server::{
     agent_gateway::registry::AgentRegistry,
@@ -40,9 +40,7 @@ async fn seed_host(pool: &MySqlPool, host_id: i64) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn spawn_app(
-    pool: MySqlPool,
-) -> anyhow::Result<std::net::SocketAddr> {
+async fn spawn_app(pool: MySqlPool) -> anyhow::Result<std::net::SocketAddr> {
     let app = build_app(AppState {
         pool,
         registry: AgentRegistry::default(),
@@ -63,13 +61,8 @@ async fn spawn_app(
 
 async fn connect(
     address: std::net::SocketAddr,
-) -> anyhow::Result<
-    WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-> {
-    let mut request =
-        format!("ws://{address}/agent/ws").into_client_request()?;
+) -> anyhow::Result<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>> {
+    let mut request = format!("ws://{address}/agent/ws").into_client_request()?;
     request.headers_mut().insert(
         http::header::AUTHORIZATION,
         "Bearer test-token".parse().unwrap(),
@@ -88,10 +81,7 @@ fn envelope(payload: AgentEvent) -> AgentEnvelope {
     }
 }
 
-async fn send_event<S>(
-    socket: &mut WebSocketStream<S>,
-    payload: AgentEvent,
-) -> anyhow::Result<()>
+async fn send_event<S>(socket: &mut WebSocketStream<S>, payload: AgentEvent) -> anyhow::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -103,10 +93,7 @@ where
     Ok(())
 }
 
-async fn send_hello<S>(
-    socket: &mut WebSocketStream<S>,
-    host_id: i64,
-) -> anyhow::Result<()>
+async fn send_hello<S>(socket: &mut WebSocketStream<S>, host_id: i64) -> anyhow::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -124,10 +111,7 @@ where
     .await
 }
 
-async fn wait_until(
-    timeout: Duration,
-    mut predicate: impl AsyncFnMut() -> bool,
-) -> bool {
+async fn wait_until(timeout: Duration, mut predicate: impl AsyncFnMut() -> bool) -> bool {
     let deadline = tokio::time::Instant::now() + timeout;
 
     loop {
@@ -142,9 +126,7 @@ async fn wait_until(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn hello_updates_existing_host_online(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn hello_updates_existing_host_online(pool: MySqlPool) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
     let address = spawn_app(pool.clone()).await?;
 
@@ -153,13 +135,12 @@ async fn hello_updates_existing_host_online(
 
     assert!(
         wait_until(Duration::from_secs(1), async || {
-            let row: Option<(String, Option<String>)> = sqlx::query_as(
-                "SELECT status, agent_version FROM host WHERE id = 7",
-            )
-            .fetch_optional(&pool)
-            .await
-            .ok()
-            .flatten();
+            let row: Option<(String, Option<String>)> =
+                sqlx::query_as("SELECT status, agent_version FROM host WHERE id = 7")
+                    .fetch_optional(&pool)
+                    .await
+                    .ok()
+                    .flatten();
 
             matches!(
                 row,
@@ -174,9 +155,7 @@ async fn hello_updates_existing_host_online(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn hello_for_unknown_host_is_rejected_without_insert(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn hello_for_unknown_host_is_rejected_without_insert(pool: MySqlPool) -> anyhow::Result<()> {
     let address = spawn_app(pool.clone()).await?;
 
     let mut socket = connect(address).await?;
@@ -184,19 +163,16 @@ async fn hello_for_unknown_host_is_rejected_without_insert(
 
     tokio::time::sleep(Duration::from_millis(75)).await;
 
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM host WHERE id = 999")
-            .fetch_one(&pool)
-            .await?;
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host WHERE id = 999")
+        .fetch_one(&pool)
+        .await?;
 
     assert_eq!(count, 0);
     Ok(())
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn heartbeat_updates_last_heartbeat_at(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn heartbeat_updates_last_heartbeat_at(pool: MySqlPool) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
     let address = spawn_app(pool.clone()).await?;
 
@@ -216,11 +192,10 @@ async fn heartbeat_updates_last_heartbeat_at(
         .await
     );
 
-    let before: chrono::NaiveDateTime = sqlx::query_scalar(
-        "SELECT last_heartbeat_at FROM host WHERE id = 7",
-    )
-    .fetch_one(&pool)
-    .await?;
+    let before: chrono::NaiveDateTime =
+        sqlx::query_scalar("SELECT last_heartbeat_at FROM host WHERE id = 7")
+            .fetch_one(&pool)
+            .await?;
 
     tokio::time::sleep(Duration::from_millis(20)).await;
 
@@ -249,9 +224,7 @@ async fn heartbeat_updates_last_heartbeat_at(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn emulator_snapshot_inserts_new_emulator(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn emulator_snapshot_inserts_new_emulator(pool: MySqlPool) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
     let address = spawn_app(pool.clone()).await?;
 
@@ -327,17 +300,16 @@ async fn emulator_snapshot_preserves_server_controlled_fields(
 
     assert!(
         wait_until(Duration::from_secs(1), async || {
-            let row: Option<(String, Option<String>, i32, Option<String>)> =
-                sqlx::query_as(
-                    "SELECT driver_type, adb_serial,
-                            max_account_count, current_job_id
-                     FROM emulator_instance
-                     WHERE emulator_code = 'emu-01'",
-                )
-                .fetch_optional(&pool)
-                .await
-                .ok()
-                .flatten();
+            let row: Option<(String, Option<String>, i32, Option<String>)> = sqlx::query_as(
+                "SELECT driver_type, adb_serial,
+                         max_account_count, current_job_id
+                  FROM emulator_instance
+                  WHERE emulator_code = 'emu-01'",
+            )
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten();
 
             matches!(
                 row,
