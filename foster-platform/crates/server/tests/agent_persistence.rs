@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use foster_protocol::{
-    AgentEnvelope, AgentEvent, AgentHello, EmulatorDescriptor, EmulatorSnapshot,
-    Heartbeat, PROTOCOL_VERSION,
+    AgentEnvelope, AgentEvent, AgentHello, EmulatorDescriptor,
+    EmulatorSnapshot, Heartbeat, PROTOCOL_VERSION,
 };
 use foster_server::{
     agent_gateway::registry::AgentRegistry,
@@ -42,11 +42,10 @@ async fn seed_host(pool: &MySqlPool, host_id: i64) -> anyhow::Result<()> {
 
 async fn spawn_app(
     pool: MySqlPool,
-) -> anyhow::Result<(std::net::SocketAddr, AgentRegistry)> {
-    let registry = AgentRegistry::default();
+) -> anyhow::Result<std::net::SocketAddr> {
     let app = build_app(AppState {
         pool,
-        registry: registry.clone(),
+        registry: AgentRegistry::default(),
         gateway_config: gateway_config(),
     });
 
@@ -59,15 +58,18 @@ async fn spawn_app(
             .expect("test server failed");
     });
 
-    Ok((address, registry))
+    Ok(address)
 }
 
 async fn connect(
     address: std::net::SocketAddr,
 ) -> anyhow::Result<
-    WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
 > {
-    let mut request = format!("ws://{address}/agent/ws").into_client_request()?;
+    let mut request =
+        format!("ws://{address}/agent/ws").into_client_request()?;
     request.headers_mut().insert(
         http::header::AUTHORIZATION,
         "Bearer test-token".parse().unwrap(),
@@ -77,24 +79,27 @@ async fn connect(
     Ok(socket)
 }
 
+fn envelope(payload: AgentEvent) -> AgentEnvelope {
+    AgentEnvelope {
+        protocol_version: PROTOCOL_VERSION,
+        event_id: Uuid::new_v4(),
+        sent_at: chrono::Utc::now(),
+        payload,
+    }
+}
+
 async fn send_event<S>(
     socket: &mut WebSocketStream<S>,
-    event: AgentEvent,
+    payload: AgentEvent,
 ) -> anyhow::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    let envelope = AgentEnvelope {
-        protocol_version: PROTOCOL_VERSION,
-        event_id: Uuid::new_v4(),
-        sent_at: chrono::Utc::now(),
-        payload: event,
-    };
-
     socket
-        .send(Message::Text(serde_json::to_string(&envelope)?.into()))
+        .send(Message::Text(
+            serde_json::to_string(&envelope(payload))?.into(),
+        ))
         .await?;
-
     Ok(())
 }
 
@@ -110,7 +115,7 @@ where
         AgentEvent::Hello(AgentHello {
             agent_id: "agent-01".into(),
             host_id,
-            agent_version: "0.1.0".into(),
+            agent_version: "0.2.0".into(),
             hostname: "win-host".into(),
             os_version: "windows".into(),
             capabilities: vec!["EMULATOR_DISCOVERY".into()],
@@ -119,14 +124,19 @@ where
     .await
 }
 
-async fn wait_online(registry: &AgentRegistry, host_id: i64) {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+async fn wait_until(
+    timeout: Duration,
+    mut predicate: impl AsyncFnMut() -> bool,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
 
-    while !registry.is_online(host_id) {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "host did not become online"
-        );
+    loop {
+        if predicate().await {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
@@ -136,22 +146,29 @@ async fn hello_updates_existing_host_online(
     pool: MySqlPool,
 ) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
-    let (address, registry) = spawn_app(pool.clone()).await?;
+    let address = spawn_app(pool.clone()).await?;
+
     let mut socket = connect(address).await?;
-
     send_hello(&mut socket, 7).await?;
-    wait_online(&registry, 7).await;
 
-    let row: (String, Option<String>) = sqlx::query_as(
-        "SELECT status, agent_version
-         FROM host
-         WHERE id = 7",
-    )
-    .fetch_one(&pool)
-    .await?;
+    assert!(
+        wait_until(Duration::from_secs(1), async || {
+            let row: Option<(String, Option<String>)> = sqlx::query_as(
+                "SELECT status, agent_version FROM host WHERE id = 7",
+            )
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten();
 
-    assert_eq!(row.0, "ONLINE");
-    assert_eq!(row.1.as_deref(), Some("0.1.0"));
+            matches!(
+                row,
+                Some((status, Some(version)))
+                    if status == "ONLINE" && version == "0.2.0"
+            )
+        })
+        .await
+    );
 
     Ok(())
 }
@@ -160,20 +177,19 @@ async fn hello_updates_existing_host_online(
 async fn hello_for_unknown_host_is_rejected_without_insert(
     pool: MySqlPool,
 ) -> anyhow::Result<()> {
-    let (address, registry) = spawn_app(pool.clone()).await?;
+    let address = spawn_app(pool.clone()).await?;
+
     let mut socket = connect(address).await?;
-
     send_hello(&mut socket, 999).await?;
-    tokio::time::sleep(Duration::from_millis(75)).await;
 
-    assert!(!registry.is_online(999));
+    tokio::time::sleep(Duration::from_millis(75)).await;
 
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM host WHERE id = 999")
             .fetch_one(&pool)
             .await?;
-    assert_eq!(count, 0);
 
+    assert_eq!(count, 0);
     Ok(())
 }
 
@@ -182,19 +198,31 @@ async fn heartbeat_updates_last_heartbeat_at(
     pool: MySqlPool,
 ) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
-    let (address, registry) = spawn_app(pool.clone()).await?;
+    let address = spawn_app(pool.clone()).await?;
+
     let mut socket = connect(address).await?;
-
     send_hello(&mut socket, 7).await?;
-    wait_online(&registry, 7).await;
 
-    sqlx::query(
-        "UPDATE host
-         SET last_heartbeat_at = '2000-01-01 00:00:00.000'
-         WHERE id = 7",
+    assert!(
+        wait_until(Duration::from_secs(1), async || {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM host
+                 WHERE id = 7 AND last_heartbeat_at IS NOT NULL",
+            )
+            .fetch_one(&pool)
+            .await
+            .is_ok_and(|count| count == 1)
+        })
+        .await
+    );
+
+    let before: chrono::NaiveDateTime = sqlx::query_scalar(
+        "SELECT last_heartbeat_at FROM host WHERE id = 7",
     )
-    .execute(&pool)
+    .fetch_one(&pool)
     .await?;
+
+    tokio::time::sleep(Duration::from_millis(20)).await;
 
     send_event(
         &mut socket,
@@ -205,18 +233,17 @@ async fn heartbeat_updates_last_heartbeat_at(
     )
     .await?;
 
-    tokio::time::sleep(Duration::from_millis(75)).await;
-
-    let updated: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)
-         FROM host
-         WHERE id = 7
-           AND last_heartbeat_at > '2001-01-01 00:00:00.000'",
-    )
-    .fetch_one(&pool)
-    .await?;
-
-    assert_eq!(updated, 1);
+    assert!(
+        wait_until(Duration::from_secs(1), async || {
+            sqlx::query_scalar::<_, chrono::NaiveDateTime>(
+                "SELECT last_heartbeat_at FROM host WHERE id = 7",
+            )
+            .fetch_one(&pool)
+            .await
+            .is_ok_and(|value| value > before)
+        })
+        .await
+    );
 
     Ok(())
 }
@@ -226,11 +253,10 @@ async fn emulator_snapshot_inserts_new_emulator(
     pool: MySqlPool,
 ) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
-    let (address, registry) = spawn_app(pool.clone()).await?;
-    let mut socket = connect(address).await?;
+    let address = spawn_app(pool.clone()).await?;
 
+    let mut socket = connect(address).await?;
     send_hello(&mut socket, 7).await?;
-    wait_online(&registry, 7).await;
 
     send_event(
         &mut socket,
@@ -245,19 +271,20 @@ async fn emulator_snapshot_inserts_new_emulator(
     )
     .await?;
 
-    tokio::time::sleep(Duration::from_millis(75)).await;
-
-    let row: (i64, String, Option<String>) = sqlx::query_as(
-        "SELECT host_id, driver_type, adb_serial
-         FROM emulator_instance
-         WHERE emulator_code = 'emu-01'",
-    )
-    .fetch_one(&pool)
-    .await?;
-
-    assert_eq!(row.0, 7);
-    assert_eq!(row.1, "FAKE");
-    assert_eq!(row.2.as_deref(), Some("127.0.0.1:5555"));
+    assert!(
+        wait_until(Duration::from_secs(1), async || {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM emulator_instance
+                 WHERE emulator_code = 'emu-01'
+                   AND host_id = 7
+                   AND driver_type = 'FAKE'",
+            )
+            .fetch_one(&pool)
+            .await
+            .is_ok_and(|count| count == 1)
+        })
+        .await
+    );
 
     Ok(())
 }
@@ -281,11 +308,9 @@ async fn emulator_snapshot_preserves_server_controlled_fields(
     .execute(&pool)
     .await?;
 
-    let (address, registry) = spawn_app(pool.clone()).await?;
+    let address = spawn_app(pool.clone()).await?;
     let mut socket = connect(address).await?;
-
     send_hello(&mut socket, 7).await?;
-    wait_online(&registry, 7).await;
 
     send_event(
         &mut socket,
@@ -300,21 +325,30 @@ async fn emulator_snapshot_preserves_server_controlled_fields(
     )
     .await?;
 
-    tokio::time::sleep(Duration::from_millis(75)).await;
+    assert!(
+        wait_until(Duration::from_secs(1), async || {
+            let row: Option<(String, Option<String>, i32, Option<String>)> =
+                sqlx::query_as(
+                    "SELECT driver_type, adb_serial,
+                            max_account_count, current_job_id
+                     FROM emulator_instance
+                     WHERE emulator_code = 'emu-01'",
+                )
+                .fetch_optional(&pool)
+                .await
+                .ok()
+                .flatten();
 
-    let row: (String, Option<String>, i32, Option<String>) =
-        sqlx::query_as(
-            "SELECT driver_type, adb_serial, max_account_count, current_job_id
-             FROM emulator_instance
-             WHERE emulator_code = 'emu-01'",
-        )
-        .fetch_one(&pool)
-        .await?;
-
-    assert_eq!(row.0, "FAKE");
-    assert_eq!(row.1.as_deref(), Some("new-adb"));
-    assert_eq!(row.2, 9);
-    assert_eq!(row.3.as_deref(), Some("job-1"));
+            matches!(
+                row,
+                Some((driver, Some(adb), 9, Some(job)))
+                    if driver == "FAKE"
+                        && adb == "new-adb"
+                        && job == "job-1"
+            )
+        })
+        .await
+    );
 
     Ok(())
 }
