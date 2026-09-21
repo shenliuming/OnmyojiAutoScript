@@ -11,21 +11,13 @@ pub enum EmulatorDriverError {
 
 #[async_trait]
 pub trait EmulatorDriver: Send + Sync + 'static {
-    async fn list_instances(
-        &self,
-    ) -> Result<Vec<EmulatorDescriptor>, EmulatorDriverError>;
+    async fn list_instances(&self) -> Result<Vec<EmulatorDescriptor>, EmulatorDriverError>;
 
     async fn start(&self, instance_id: &str) -> Result<(), EmulatorDriverError>;
 
     async fn stop(&self, instance_id: &str) -> Result<(), EmulatorDriverError>;
 
-    async fn adb_serial(
-        &self,
-        instance_id: &str,
-    ) -> Result<Option<String>, EmulatorDriverError>;
+    async fn adb_serial(&self, instance_id: &str) -> Result<Option<String>, EmulatorDriverError>;
 
-    async fn screenshot(
-        &self,
-        instance_id: &str,
-    ) -> Result<Vec<u8>, EmulatorDriverError>;
+    async fn screenshot(&self, instance_id: &str) -> Result<Vec<u8>, EmulatorDriverError>;
 }
