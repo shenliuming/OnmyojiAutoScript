@@ -1,9 +1,7 @@
 use std::time::Duration;
 
 use axum::body::Body;
-use foster_protocol::{
-    AgentEnvelope, AgentEvent, AgentHello, PROTOCOL_VERSION,
-};
+use foster_protocol::{AgentEnvelope, AgentEvent, AgentHello, PROTOCOL_VERSION};
 use foster_server::{
     agent_gateway::registry::AgentRegistry,
     app::{AppState, build_app},
@@ -42,9 +40,7 @@ fn gateway_config() -> AgentGatewayConfig {
     }
 }
 
-async fn spawn_app(
-    pool: MySqlPool,
-) -> anyhow::Result<(std::net::SocketAddr, AgentRegistry)> {
+async fn spawn_app(pool: MySqlPool) -> anyhow::Result<(std::net::SocketAddr, AgentRegistry)> {
     let registry = AgentRegistry::default();
     let app = build_app(AppState {
         pool,
@@ -112,10 +108,7 @@ where
     Ok(())
 }
 
-async fn wait_until(
-    timeout: Duration,
-    mut predicate: impl FnMut() -> bool,
-) -> bool {
+async fn wait_until(timeout: Duration, mut predicate: impl FnMut() -> bool) -> bool {
     let deadline = tokio::time::Instant::now() + timeout;
 
     loop {
@@ -185,9 +178,7 @@ async fn valid_hello_registers_known_host(
     let mut socket = connect(address, Some("test-token")).await?;
     send_hello(&mut socket, 7, PROTOCOL_VERSION).await?;
 
-    assert!(
-        wait_until(Duration::from_secs(1), || registry.is_online(7)).await
-    );
+    assert!(wait_until(Duration::from_secs(1), || registry.is_online(7)).await);
 
     Ok(())
 }
@@ -217,9 +208,7 @@ async fn replacement_connection_survives_old_socket_close(
 
     let mut first = connect(address, Some("test-token")).await?;
     send_hello(&mut first, 7, PROTOCOL_VERSION).await?;
-    assert!(
-        wait_until(Duration::from_secs(1), || registry.is_online(7)).await
-    );
+    assert!(wait_until(Duration::from_secs(1), || registry.is_online(7)).await);
 
     let mut second = connect(address, Some("test-token")).await?;
     send_hello(&mut second, 7, PROTOCOL_VERSION).await?;
@@ -251,13 +240,9 @@ async fn host_becomes_offline_after_heartbeat_timeout(
     let mut socket = connect(address, Some("test-token")).await?;
     send_hello(&mut socket, 7, PROTOCOL_VERSION).await?;
 
-    assert!(
-        wait_until(Duration::from_secs(1), || registry.is_online(7)).await
-    );
+    assert!(wait_until(Duration::from_secs(1), || registry.is_online(7)).await);
 
-    assert!(
-        wait_until(Duration::from_secs(1), || !registry.is_online(7)).await
-    );
+    assert!(wait_until(Duration::from_secs(1), || !registry.is_online(7)).await);
 
     let _ = socket.next().await;
     Ok(())
