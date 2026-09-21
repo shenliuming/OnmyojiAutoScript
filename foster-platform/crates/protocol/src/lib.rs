@@ -1,3 +1,7 @@
-pub mod envelope;
+mod agent;
+mod envelope;
+mod server;
 
-pub const PROTOCOL_VERSION: u16 = 1;
+pub use agent::*;
+pub use envelope::*;
+pub use server::*;

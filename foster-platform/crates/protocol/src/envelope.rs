@@ -1,3 +1,45 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::{AgentEvent, ServerCommand};
+
+pub const PROTOCOL_VERSION: u16 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerEnvelope {
+    pub protocol_version: u16,
+    pub command_id: Uuid,
+    pub sent_at: DateTime<Utc>,
+    pub payload: ServerCommand,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentEnvelope {
+    pub protocol_version: u16,
+    pub event_id: Uuid,
+    pub sent_at: DateTime<Utc>,
+    pub payload: AgentEvent,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("unsupported protocol version {received}; expected {expected}")]
+pub struct ProtocolVersionError {
+    pub received: u16,
+    pub expected: u16,
+}
+
+pub fn validate_protocol_version(received: u16) -> Result<(), ProtocolVersionError> {
+    if received == PROTOCOL_VERSION {
+        Ok(())
+    } else {
+        Err(ProtocolVersionError {
+            received,
+            expected: PROTOCOL_VERSION,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::{DateTime, Utc};
