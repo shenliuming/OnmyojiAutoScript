@@ -8,17 +8,12 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use foster_protocol::{
-    AgentEnvelope, AgentEvent, validate_protocol_version,
-};
+use foster_protocol::{AgentEnvelope, AgentEvent, validate_protocol_version};
 use futures_util::StreamExt;
 use uuid::Uuid;
 
 use crate::{
-    agent_gateway::{
-        auth::is_authorized,
-        registry::AgentPresence,
-    },
+    agent_gateway::{auth::is_authorized, registry::AgentPresence},
     app::AppState,
 };
 
@@ -80,8 +75,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         return;
     }
 
-    let mut deadline =
-        tokio::time::Instant::now() + state.gateway_config.heartbeat_timeout;
+    let mut deadline = tokio::time::Instant::now() + state.gateway_config.heartbeat_timeout;
 
     loop {
         tokio::select! {
@@ -140,12 +134,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 }
 
 async fn host_exists(state: &AppState, host_id: i64) -> Result<bool, sqlx::Error> {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM host WHERE id = ?",
-    )
-    .bind(host_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host WHERE id = ?")
+        .bind(host_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     Ok(count > 0)
 }
@@ -170,10 +162,7 @@ async fn mark_host_online(
     Ok(())
 }
 
-async fn mark_host_offline(
-    state: &AppState,
-    host_id: i64,
-) -> Result<(), sqlx::Error> {
+async fn mark_host_offline(state: &AppState, host_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE host
          SET status = 'OFFLINE'
