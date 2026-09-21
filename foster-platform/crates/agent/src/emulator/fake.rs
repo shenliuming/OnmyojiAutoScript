@@ -13,24 +13,17 @@ impl FakeEmulatorDriver {
         Self { instances }
     }
 
-    fn find(
-        &self,
-        instance_id: &str,
-    ) -> Result<&EmulatorDescriptor, EmulatorDriverError> {
+    fn find(&self, instance_id: &str) -> Result<&EmulatorDescriptor, EmulatorDriverError> {
         self.instances
             .iter()
             .find(|instance| instance.emulator_code == instance_id)
-            .ok_or_else(|| {
-                EmulatorDriverError::UnknownInstance(instance_id.to_string())
-            })
+            .ok_or_else(|| EmulatorDriverError::UnknownInstance(instance_id.to_string()))
     }
 }
 
 #[async_trait]
 impl EmulatorDriver for FakeEmulatorDriver {
-    async fn list_instances(
-        &self,
-    ) -> Result<Vec<EmulatorDescriptor>, EmulatorDriverError> {
+    async fn list_instances(&self) -> Result<Vec<EmulatorDescriptor>, EmulatorDriverError> {
         Ok(self.instances.clone())
     }
 
@@ -44,17 +37,11 @@ impl EmulatorDriver for FakeEmulatorDriver {
         Ok(())
     }
 
-    async fn adb_serial(
-        &self,
-        instance_id: &str,
-    ) -> Result<Option<String>, EmulatorDriverError> {
+    async fn adb_serial(&self, instance_id: &str) -> Result<Option<String>, EmulatorDriverError> {
         Ok(self.find(instance_id)?.adb_serial.clone())
     }
 
-    async fn screenshot(
-        &self,
-        instance_id: &str,
-    ) -> Result<Vec<u8>, EmulatorDriverError> {
+    async fn screenshot(&self, instance_id: &str) -> Result<Vec<u8>, EmulatorDriverError> {
         self.find(instance_id)?;
         Ok(Vec::new())
     }
