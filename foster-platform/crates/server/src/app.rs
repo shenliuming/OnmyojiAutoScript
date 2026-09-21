@@ -1,15 +1,9 @@
-use axum::{
-    Json, Router,
-    routing::get,
-};
+use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
 use crate::{
-    agent_gateway::{
-        handler::ws_handler,
-        registry::AgentRegistry,
-    },
+    agent_gateway::{handler::ws_handler, registry::AgentRegistry},
     config::AgentGatewayConfig,
 };
 
@@ -35,8 +29,7 @@ async fn healthz() -> Json<Value> {
 
 fn spawn_stale_sweeper(state: AppState) {
     tokio::spawn(async move {
-        let mut interval =
-            tokio::time::interval(state.gateway_config.sweep_interval);
+        let mut interval = tokio::time::interval(state.gateway_config.sweep_interval);
 
         loop {
             interval.tick().await;
