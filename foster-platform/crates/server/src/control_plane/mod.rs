@@ -1,4 +1,4 @@
 mod allocator;
-mod repository;
+pub(crate) mod repository;
 
 pub use allocator::{AllocatedBinding, AllocationError, BindingAllocator};
