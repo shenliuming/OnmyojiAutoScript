@@ -1,1 +1,3 @@
-// WebSocket client is introduced after the RED tests compile.
+mod client;
+
+pub use client::{AgentWebSocket, WsClientError, connect};
