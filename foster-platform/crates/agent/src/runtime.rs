@@ -5,9 +5,8 @@ use std::{
 
 use foster_domain::EmulatorStatus;
 use foster_protocol::{
-    AgentEnvelope, AgentEvent, AgentHello, EmulatorHeartbeat,
-    EmulatorSnapshot, Heartbeat, Pong, PROTOCOL_VERSION, ServerCommand,
-    ServerEnvelope, validate_protocol_version,
+    AgentEnvelope, AgentEvent, AgentHello, EmulatorHeartbeat, EmulatorSnapshot, Heartbeat,
+    PROTOCOL_VERSION, Pong, ServerCommand, ServerEnvelope, validate_protocol_version,
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
@@ -70,8 +69,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         self.send_hello(&mut socket).await?;
         self.send_snapshot(&mut socket).await?;
 
-        let mut heartbeat =
-            tokio::time::interval(self.config.heartbeat_interval);
+        let mut heartbeat = tokio::time::interval(self.config.heartbeat_interval);
         heartbeat.tick().await;
 
         loop {
@@ -130,10 +128,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         Ok(())
     }
 
-    async fn send_hello(
-        &self,
-        socket: &mut AgentWebSocket,
-    ) -> Result<(), AgentRuntimeError> {
+    async fn send_hello(&self, socket: &mut AgentWebSocket) -> Result<(), AgentRuntimeError> {
         let hostname = std::env::var("COMPUTERNAME")
             .or_else(|_| std::env::var("HOSTNAME"))
             .unwrap_or_else(|_| "unknown-host".to_string());
@@ -152,10 +147,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         .await
     }
 
-    async fn send_snapshot(
-        &self,
-        socket: &mut AgentWebSocket,
-    ) -> Result<(), AgentRuntimeError> {
+    async fn send_snapshot(&self, socket: &mut AgentWebSocket) -> Result<(), AgentRuntimeError> {
         let emulators = self.driver.list_instances().await?;
 
         self.send_event(
@@ -168,10 +160,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         .await
     }
 
-    async fn send_heartbeat(
-        &self,
-        socket: &mut AgentWebSocket,
-    ) -> Result<(), AgentRuntimeError> {
+    async fn send_heartbeat(&self, socket: &mut AgentWebSocket) -> Result<(), AgentRuntimeError> {
         let emulators = self
             .driver
             .list_instances()
