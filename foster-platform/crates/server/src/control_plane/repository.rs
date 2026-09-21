@@ -66,7 +66,7 @@ pub async fn lock_emulator(
          FROM emulator_instance
          WHERE id = ?
            AND status = 'IDLE'
-         FOR UPDATE SKIP LOCKED",
+         FOR UPDATE",
     )
     .bind(emulator_id)
     .fetch_optional(&mut **tx)
