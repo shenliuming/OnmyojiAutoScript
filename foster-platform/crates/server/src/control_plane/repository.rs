@@ -1,4 +1,5 @@
-use sqlx::{MySql, Transaction};
+use foster_protocol::EmulatorDescriptor;
+use sqlx::{MySql, MySqlPool, Transaction};
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct GameAccountLockRow {
@@ -10,6 +11,96 @@ pub struct GameAccountLockRow {
 pub struct EmulatorCapacityRow {
     pub id: i64,
     pub max_account_count: i32,
+}
+
+pub async fn host_exists(pool: &MySqlPool, host_id: i64) -> Result<bool, sqlx::Error> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host WHERE id = ?")
+        .bind(host_id)
+        .fetch_one(pool)
+        .await?;
+
+    Ok(count > 0)
+}
+
+pub async fn mark_host_online(
+    pool: &MySqlPool,
+    host_id: i64,
+    agent_version: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE host
+         SET status = 'ONLINE',
+             agent_version = ?,
+             last_heartbeat_at = NOW(3)
+         WHERE id = ?",
+    )
+    .bind(agent_version)
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn touch_host_heartbeat(
+    pool: &MySqlPool,
+    host_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE host
+         SET last_heartbeat_at = NOW(3)
+         WHERE id = ?",
+    )
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn mark_host_offline(pool: &MySqlPool, host_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE host
+         SET status = 'OFFLINE'
+         WHERE id = ?",
+    )
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn upsert_emulator_snapshot(
+    pool: &MySqlPool,
+    host_id: i64,
+    items: &[EmulatorDescriptor],
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    for item in items {
+        sqlx::query(
+            "INSERT INTO emulator_instance(
+                host_id, emulator_code, driver_type, adb_serial,
+                status, last_heartbeat_at
+             )
+             VALUES (?, ?, ?, ?, 'IDLE', NOW(3))
+             ON DUPLICATE KEY UPDATE
+                host_id = VALUES(host_id),
+                driver_type = VALUES(driver_type),
+                adb_serial = VALUES(adb_serial),
+                last_heartbeat_at = VALUES(last_heartbeat_at)",
+        )
+        .bind(host_id)
+        .bind(&item.emulator_code)
+        .bind(&item.driver_type)
+        .bind(&item.adb_serial)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
 }
 
 pub async fn lock_game_account(
