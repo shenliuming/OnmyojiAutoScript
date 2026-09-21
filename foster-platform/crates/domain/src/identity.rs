@@ -45,10 +45,7 @@ pub fn normalize_identity(kind: IdentityType, value: &str) -> String {
     }
 }
 
-fn stored_values(
-    stored: &[AccountIdentity],
-    kind: IdentityType,
-) -> HashSet<&str> {
+fn stored_values(stored: &[AccountIdentity], kind: IdentityType) -> HashSet<&str> {
     stored
         .iter()
         .filter(|identity| identity.kind == kind)
@@ -56,11 +53,7 @@ fn stored_values(
         .collect()
 }
 
-fn optional_match(
-    stored: &[AccountIdentity],
-    kind: IdentityType,
-    detected: Option<&str>,
-) -> bool {
+fn optional_match(stored: &[AccountIdentity], kind: IdentityType, detected: Option<&str>) -> bool {
     let Some(detected) = detected else {
         return false;
     };
@@ -92,10 +85,7 @@ fn optional_conflict(
     !expected.contains(normalized.as_str())
 }
 
-fn account_signal_matches(
-    stored: &[AccountIdentity],
-    detected: &DetectedIdentity,
-) -> bool {
+fn account_signal_matches(stored: &[AccountIdentity], detected: &DetectedIdentity) -> bool {
     let expected: HashSet<&str> = stored
         .iter()
         .filter(|identity| {
@@ -133,11 +123,7 @@ pub fn verify_identity(
 ) -> IdentityDecision {
     let mut conflicting = Vec::new();
 
-    if optional_conflict(
-        stored,
-        IdentityType::GameUid,
-        detected.game_uid.as_deref(),
-    ) {
+    if optional_conflict(stored, IdentityType::GameUid, detected.game_uid.as_deref()) {
         conflicting.push(IdentityType::GameUid);
     }
     if optional_conflict(
@@ -159,11 +145,7 @@ pub fn verify_identity(
         return IdentityDecision::Mismatch { conflicting };
     }
 
-    let uid_match = optional_match(
-        stored,
-        IdentityType::GameUid,
-        detected.game_uid.as_deref(),
-    );
+    let uid_match = optional_match(stored, IdentityType::GameUid, detected.game_uid.as_deref());
     let character_match = optional_match(
         stored,
         IdentityType::CharacterName,
