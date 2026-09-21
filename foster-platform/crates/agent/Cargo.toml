@@ -5,7 +5,15 @@ edition.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+chrono.workspace = true
 foster-domain = { path = "../domain" }
 foster-protocol = { path = "../protocol" }
+futures-util.workspace = true
+http.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
