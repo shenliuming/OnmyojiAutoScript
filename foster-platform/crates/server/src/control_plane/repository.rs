@@ -42,10 +42,7 @@ pub async fn mark_host_online(
     Ok(())
 }
 
-pub async fn touch_host_heartbeat(
-    pool: &MySqlPool,
-    host_id: i64,
-) -> Result<(), sqlx::Error> {
+pub async fn touch_host_heartbeat(pool: &MySqlPool, host_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE host
          SET last_heartbeat_at = NOW(3)
