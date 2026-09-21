@@ -1,6 +1,4 @@
-use foster_agent::emulator::{
-    EmulatorDriver, EmulatorDriverError, FakeEmulatorDriver,
-};
+use foster_agent::emulator::{EmulatorDriver, EmulatorDriverError, FakeEmulatorDriver};
 use foster_protocol::EmulatorDescriptor;
 
 #[tokio::test]
