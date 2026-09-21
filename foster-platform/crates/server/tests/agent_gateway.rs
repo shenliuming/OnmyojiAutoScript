@@ -145,9 +145,7 @@ async fn healthz_returns_ok(pool: MySqlPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn missing_agent_token_is_rejected(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn missing_agent_token_is_rejected(pool: MySqlPool) -> anyhow::Result<()> {
     let (address, _) = spawn_app(pool).await?;
 
     let result = connect(address, None).await;
@@ -157,9 +155,7 @@ async fn missing_agent_token_is_rejected(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn invalid_agent_token_is_rejected(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn invalid_agent_token_is_rejected(pool: MySqlPool) -> anyhow::Result<()> {
     let (address, _) = spawn_app(pool).await?;
 
     let result = connect(address, Some("wrong-token")).await;
@@ -169,9 +165,7 @@ async fn invalid_agent_token_is_rejected(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn valid_hello_registers_known_host(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn valid_hello_registers_known_host(pool: MySqlPool) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
     let (address, registry) = spawn_app(pool).await?;
 
@@ -184,9 +178,7 @@ async fn valid_hello_registers_known_host(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn unsupported_protocol_version_never_registers_host(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn unsupported_protocol_version_never_registers_host(pool: MySqlPool) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
     let (address, registry) = spawn_app(pool).await?;
 
@@ -200,9 +192,7 @@ async fn unsupported_protocol_version_never_registers_host(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn replacement_connection_survives_old_socket_close(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn replacement_connection_survives_old_socket_close(pool: MySqlPool) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
     let (address, registry) = spawn_app(pool).await?;
 
@@ -231,9 +221,7 @@ async fn replacement_connection_survives_old_socket_close(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn host_becomes_offline_after_heartbeat_timeout(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn host_becomes_offline_after_heartbeat_timeout(pool: MySqlPool) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
     let (address, registry) = spawn_app(pool).await?;
 
