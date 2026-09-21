@@ -146,7 +146,6 @@ async fn concurrent_allocations_do_not_oversell_last_slot(pool: MySqlPool) -> an
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
 async fn allocation_waits_for_busy_emulator_when_capacity_remains(
     pool: MySqlPool,
@@ -167,17 +166,12 @@ async fn allocation_waits_for_busy_emulator_when_capacity_remains(
     .await?;
 
     let allocator = BindingAllocator::new(pool.clone());
-    let allocation =
-        tokio::spawn(async move { allocator.allocate_pending(account).await });
+    let allocation = tokio::spawn(async move { allocator.allocate_pending(account).await });
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     blocker.commit().await?;
 
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        allocation,
-    )
-    .await??;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), allocation).await??;
 
     assert!(result.is_ok());
 
