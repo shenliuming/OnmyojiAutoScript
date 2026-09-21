@@ -1,1 +1,5 @@
-// Emulator driver types are introduced by the next implementation step.
+mod driver;
+mod fake;
+
+pub use driver::{EmulatorDriver, EmulatorDriverError};
+pub use fake::FakeEmulatorDriver;
