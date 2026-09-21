@@ -15,6 +15,10 @@ use uuid::Uuid;
 use crate::{
     agent_gateway::{auth::is_authorized, registry::AgentPresence},
     app::AppState,
+    control_plane::repository::{
+        host_exists, mark_host_offline, mark_host_online, touch_host_heartbeat,
+        upsert_emulator_snapshot,
+    },
 };
 
 pub async fn ws_handler(
@@ -47,7 +51,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         return;
     };
 
-    let Ok(exists) = host_exists(&state, hello.host_id).await else {
+    let Ok(exists) = host_exists(&state.pool, hello.host_id).await else {
         return;
     };
     if !exists {
@@ -65,7 +69,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         last_heartbeat_at: now,
     });
 
-    if mark_host_online(&state, hello.host_id, &hello.agent_version)
+    if mark_host_online(&state.pool, hello.host_id, &hello.agent_version)
         .await
         .is_err()
     {
@@ -102,20 +106,47 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             break;
                         }
 
-                        if let AgentEvent::Heartbeat(heartbeat) = envelope.payload {
-                            if heartbeat.host_id != hello.host_id {
-                                break;
-                            }
+                        match envelope.payload {
+                            AgentEvent::Heartbeat(heartbeat) => {
+                                if heartbeat.host_id != hello.host_id {
+                                    break;
+                                }
 
-                            if state
-                                .registry
-                                .heartbeat(hello.host_id, connection_id)
-                            {
+                                if !state
+                                    .registry
+                                    .heartbeat(hello.host_id, connection_id)
+                                {
+                                    break;
+                                }
+
+                                if touch_host_heartbeat(&state.pool, hello.host_id)
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+
                                 deadline = tokio::time::Instant::now()
                                     + state.gateway_config.heartbeat_timeout;
-                            } else {
-                                break;
                             }
+                            AgentEvent::EmulatorSnapshot(snapshot) => {
+                                if snapshot.host_id != hello.host_id {
+                                    break;
+                                }
+
+                                if upsert_emulator_snapshot(
+                                    &state.pool,
+                                    hello.host_id,
+                                    &snapshot.emulators,
+                                )
+                                .await
+                                .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                            AgentEvent::Hello(_) => break,
+                            AgentEvent::Pong(_) => {}
                         }
                     }
                     Message::Close(_) => break,
@@ -129,48 +160,6 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         .registry
         .remove_if_current(hello.host_id, connection_id)
     {
-        let _ = mark_host_offline(&state, hello.host_id).await;
+        let _ = mark_host_offline(&state.pool, hello.host_id).await;
     }
-}
-
-async fn host_exists(state: &AppState, host_id: i64) -> Result<bool, sqlx::Error> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host WHERE id = ?")
-        .bind(host_id)
-        .fetch_one(&state.pool)
-        .await?;
-
-    Ok(count > 0)
-}
-
-async fn mark_host_online(
-    state: &AppState,
-    host_id: i64,
-    agent_version: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE host
-         SET status = 'ONLINE',
-             agent_version = ?,
-             last_heartbeat_at = NOW(3)
-         WHERE id = ?",
-    )
-    .bind(agent_version)
-    .bind(host_id)
-    .execute(&state.pool)
-    .await?;
-
-    Ok(())
-}
-
-async fn mark_host_offline(state: &AppState, host_id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE host
-         SET status = 'OFFLINE'
-         WHERE id = ?",
-    )
-    .bind(host_id)
-    .execute(&state.pool)
-    .await?;
-
-    Ok(())
 }
