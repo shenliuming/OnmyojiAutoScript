@@ -90,9 +90,7 @@ async fn database_rejects_two_active_bindings_for_same_account(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn database_rejects_two_occupied_bindings_for_same_slot(
-    pool: MySqlPool,
-) -> sqlx::Result<()> {
+async fn database_rejects_two_occupied_bindings_for_same_slot(pool: MySqlPool) -> sqlx::Result<()> {
     let host_id = insert_host(&pool, "host-a").await?;
     let emulator_id = insert_emulator(&pool, host_id, "emu-a", 5).await?;
     let account_a = insert_account(&pool, 1001).await?;
@@ -107,9 +105,7 @@ async fn database_rejects_two_occupied_bindings_for_same_slot(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn unbound_history_does_not_block_slot_reuse(
-    pool: MySqlPool,
-) -> sqlx::Result<()> {
+async fn unbound_history_does_not_block_slot_reuse(pool: MySqlPool) -> sqlx::Result<()> {
     let host_id = insert_host(&pool, "host-a").await?;
     let emulator_id = insert_emulator(&pool, host_id, "emu-a", 5).await?;
     let account_a = insert_account(&pool, 1001).await?;
