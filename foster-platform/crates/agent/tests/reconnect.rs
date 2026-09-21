@@ -51,6 +51,7 @@ async fn bind_server() -> anyhow::Result<(TcpListener, String)> {
     Ok((listener, format!("ws://{address}/agent/ws")))
 }
 
+#[allow(clippy::result_large_err)]
 async fn accept_authenticated(
     listener: &TcpListener,
 ) -> anyhow::Result<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>> {
