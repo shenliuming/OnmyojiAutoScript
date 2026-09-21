@@ -6,14 +6,10 @@ use std::{
     time::Duration,
 };
 
-use foster_agent::{
-    config::AgentConfig,
-    emulator::FakeEmulatorDriver,
-    runtime::AgentRuntime,
-};
+use foster_agent::{config::AgentConfig, emulator::FakeEmulatorDriver, runtime::AgentRuntime};
 use foster_protocol::{
-    AgentEnvelope, AgentEvent, EmulatorDescriptor, RefreshEmulatorsCommand,
-    ServerCommand, ServerEnvelope, PROTOCOL_VERSION,
+    AgentEnvelope, AgentEvent, EmulatorDescriptor, PROTOCOL_VERSION, RefreshEmulatorsCommand,
+    ServerCommand, ServerEnvelope,
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
@@ -57,23 +53,18 @@ async fn bind_server() -> anyhow::Result<(TcpListener, String)> {
 
 async fn accept_authenticated(
     listener: &TcpListener,
-) -> anyhow::Result<
-    tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
-> {
+) -> anyhow::Result<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>> {
     let (stream, _) = listener.accept().await?;
-    let socket = accept_hdr_async(
-        stream,
-        |request: &Request, response: Response| {
-            assert_eq!(
-                request
-                    .headers()
-                    .get(http::header::AUTHORIZATION)
-                    .and_then(|value| value.to_str().ok()),
-                Some("Bearer test-token")
-            );
-            Ok(response)
-        },
-    )
+    let socket = accept_hdr_async(stream, |request: &Request, response: Response| {
+        assert_eq!(
+            request
+                .headers()
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer test-token")
+        );
+        Ok(response)
+    })
     .await?;
     Ok(socket)
 }
@@ -168,15 +159,11 @@ async fn refresh_emulators_sends_fresh_snapshot() -> anyhow::Result<()> {
         protocol_version: PROTOCOL_VERSION,
         command_id: Uuid::new_v4(),
         sent_at: chrono::Utc::now(),
-        payload: ServerCommand::RefreshEmulators(
-            RefreshEmulatorsCommand::default(),
-        ),
+        payload: ServerCommand::RefreshEmulators(RefreshEmulatorsCommand::default()),
     };
 
     socket
-        .send(Message::Text(
-            serde_json::to_string(&command)?.into(),
-        ))
+        .send(Message::Text(serde_json::to_string(&command)?.into()))
         .await?;
 
     let refreshed = loop {
@@ -210,11 +197,8 @@ async fn agent_reconnects_and_sends_hello_again() -> anyhow::Result<()> {
     let first_hello = read_agent_event(&mut first).await?;
     first.close(None).await?;
 
-    let mut second = tokio::time::timeout(
-        Duration::from_secs(1),
-        accept_authenticated(&listener),
-    )
-    .await??;
+    let mut second =
+        tokio::time::timeout(Duration::from_secs(1), accept_authenticated(&listener)).await??;
     connections.fetch_add(1, Ordering::SeqCst);
     let second_hello = read_agent_event(&mut second).await?;
 
