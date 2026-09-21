@@ -34,10 +34,7 @@ async fn seed_emulator(
     Ok(result.last_insert_id() as i64)
 }
 
-async fn seed_account(
-    pool: &MySqlPool,
-    customer_id: i64,
-) -> anyhow::Result<i64> {
+async fn seed_account(pool: &MySqlPool, customer_id: i64) -> anyhow::Result<i64> {
     let result = sqlx::query(
         "INSERT INTO game_account(
             customer_id, login_status, verify_status
@@ -52,9 +49,7 @@ async fn seed_account(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn pending_binding_consumes_capacity(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn pending_binding_consumes_capacity(pool: MySqlPool) -> anyhow::Result<()> {
     let host_id = seed_host(&pool).await?;
     seed_emulator(&pool, host_id, "emu-a", 1).await?;
     let account_a = seed_account(&pool, 1001).await?;
@@ -90,9 +85,7 @@ async fn same_account_cannot_receive_second_reserved_binding(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn allocator_uses_lowest_free_slot(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn allocator_uses_lowest_free_slot(pool: MySqlPool) -> anyhow::Result<()> {
     let host_id = seed_host(&pool).await?;
     let emulator_id = seed_emulator(&pool, host_id, "emu-a", 3).await?;
     let existing = seed_account(&pool, 1001).await?;
@@ -119,9 +112,7 @@ async fn allocator_uses_lowest_free_slot(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn concurrent_allocations_do_not_oversell_last_slot(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn concurrent_allocations_do_not_oversell_last_slot(pool: MySqlPool) -> anyhow::Result<()> {
     let host_id = seed_host(&pool).await?;
     seed_emulator(&pool, host_id, "emu-a", 1).await?;
     let account_a = seed_account(&pool, 1001).await?;
