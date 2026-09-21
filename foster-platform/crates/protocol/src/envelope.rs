@@ -4,8 +4,8 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
-        validate_protocol_version, AgentEnvelope, AgentEvent, AgentHello,
-        ProtocolVersionError, PROTOCOL_VERSION,
+        AgentEnvelope, AgentEvent, AgentHello, PROTOCOL_VERSION, ProtocolVersionError,
+        validate_protocol_version,
     };
 
     #[test]
