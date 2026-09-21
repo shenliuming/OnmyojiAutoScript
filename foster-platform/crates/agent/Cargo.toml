@@ -1,0 +1,8 @@
+[package]
+name = "foster-agent"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+foster-domain = { path = "../domain" }
+foster-protocol = { path = "../protocol" }

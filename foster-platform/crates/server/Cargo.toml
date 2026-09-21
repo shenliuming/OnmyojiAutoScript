@@ -1,0 +1,13 @@
+[package]
+name = "foster-server"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+foster-domain = { path = "../domain" }
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
