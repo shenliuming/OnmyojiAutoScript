@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use sqlx::{mysql::MySqlDatabaseError, MySqlPool};
+use sqlx::{MySqlPool, mysql::MySqlDatabaseError};
 
 use super::repository::{
     candidate_emulator_ids, has_reserved_binding, insert_pending_binding, lock_emulator,
