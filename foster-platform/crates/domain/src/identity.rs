@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -40,6 +42,161 @@ pub fn normalize_identity(kind: IdentityType, value: &str) -> String {
             value.trim().to_ascii_lowercase().replace(' ', "")
         }
         _ => value.trim().to_string(),
+    }
+}
+
+fn stored_values(
+    stored: &[AccountIdentity],
+    kind: IdentityType,
+) -> HashSet<&str> {
+    stored
+        .iter()
+        .filter(|identity| identity.kind == kind)
+        .map(|identity| identity.normalized_value.as_str())
+        .collect()
+}
+
+fn optional_match(
+    stored: &[AccountIdentity],
+    kind: IdentityType,
+    detected: Option<&str>,
+) -> bool {
+    let Some(detected) = detected else {
+        return false;
+    };
+
+    let expected = stored_values(stored, kind);
+    if expected.is_empty() {
+        return false;
+    }
+
+    let normalized = normalize_identity(kind, detected);
+    expected.contains(normalized.as_str())
+}
+
+fn optional_conflict(
+    stored: &[AccountIdentity],
+    kind: IdentityType,
+    detected: Option<&str>,
+) -> bool {
+    let Some(detected) = detected else {
+        return false;
+    };
+
+    let expected = stored_values(stored, kind);
+    if expected.is_empty() {
+        return false;
+    }
+
+    let normalized = normalize_identity(kind, detected);
+    !expected.contains(normalized.as_str())
+}
+
+fn account_signal_matches(
+    stored: &[AccountIdentity],
+    detected: &DetectedIdentity,
+) -> bool {
+    let expected: HashSet<&str> = stored
+        .iter()
+        .filter(|identity| {
+            matches!(
+                identity.kind,
+                IdentityType::MaskedAccount | IdentityType::OcrAlias
+            )
+        })
+        .map(|identity| identity.normalized_value.as_str())
+        .collect();
+
+    if expected.is_empty() {
+        return false;
+    }
+
+    let mut candidates = Vec::new();
+    if let Some(masked) = detected.masked_account.as_deref() {
+        candidates.push(normalize_identity(IdentityType::MaskedAccount, masked));
+    }
+    candidates.extend(
+        detected
+            .ocr_aliases
+            .iter()
+            .map(|alias| normalize_identity(IdentityType::OcrAlias, alias)),
+    );
+
+    candidates
+        .iter()
+        .any(|candidate| expected.contains(candidate.as_str()))
+}
+
+pub fn verify_identity(
+    stored: &[AccountIdentity],
+    detected: &DetectedIdentity,
+) -> IdentityDecision {
+    let mut conflicting = Vec::new();
+
+    if optional_conflict(
+        stored,
+        IdentityType::GameUid,
+        detected.game_uid.as_deref(),
+    ) {
+        conflicting.push(IdentityType::GameUid);
+    }
+    if optional_conflict(
+        stored,
+        IdentityType::CharacterName,
+        detected.character_name.as_deref(),
+    ) {
+        conflicting.push(IdentityType::CharacterName);
+    }
+    if optional_conflict(
+        stored,
+        IdentityType::ServerName,
+        detected.server_name.as_deref(),
+    ) {
+        conflicting.push(IdentityType::ServerName);
+    }
+
+    if !conflicting.is_empty() {
+        return IdentityDecision::Mismatch { conflicting };
+    }
+
+    let uid_match = optional_match(
+        stored,
+        IdentityType::GameUid,
+        detected.game_uid.as_deref(),
+    );
+    let character_match = optional_match(
+        stored,
+        IdentityType::CharacterName,
+        detected.character_name.as_deref(),
+    );
+    let server_match = optional_match(
+        stored,
+        IdentityType::ServerName,
+        detected.server_name.as_deref(),
+    );
+    let account_match = account_signal_matches(stored, detected);
+
+    let mut matched = Vec::new();
+    if uid_match {
+        matched.push(IdentityType::GameUid);
+    }
+    if character_match {
+        matched.push(IdentityType::CharacterName);
+    }
+    if server_match {
+        matched.push(IdentityType::ServerName);
+    }
+    if account_match {
+        matched.push(IdentityType::MaskedAccount);
+    }
+
+    if uid_match
+        || (character_match && server_match)
+        || (account_match && (character_match || server_match))
+    {
+        IdentityDecision::Verified { matched }
+    } else {
+        IdentityDecision::Ambiguous
     }
 }
 
