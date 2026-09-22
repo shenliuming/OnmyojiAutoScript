@@ -376,15 +376,23 @@ impl FosterDispatchService {
                 .release_for_job(event.job_id, &event.message, event.failed_at)
                 .await?;
 
-            if event.error_code == FosterErrorCode::ProviderNotFound {
-                if let Some(released) = released {
-                    resource_pool
-                        .mark_provider_not_found(
-                            target.game_account_id,
-                            released.provider_account_id,
-                            event.failed_at,
-                        )
-                        .await?;
+            if let Some(released) = released {
+                match event.error_code {
+                    FosterErrorCode::ProviderNotFound => {
+                        resource_pool
+                            .mark_provider_not_found(
+                                target.game_account_id,
+                                released.provider_account_id,
+                                event.failed_at,
+                            )
+                            .await?;
+                    }
+                    FosterErrorCode::NoSlot => {
+                        resource_pool
+                            .mark_no_slot(released.resource_cycle_id)
+                            .await?;
+                    }
+                    _ => {}
                 }
             }
         }
