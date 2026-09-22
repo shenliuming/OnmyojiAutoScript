@@ -169,7 +169,8 @@ impl EnrollmentService {
                 return Err(EnrollmentError::IdentityRejected);
             }
 
-            persist_first_enrollment_identities(&mut tx, session.game_account_id, &detected).await?;
+            persist_first_enrollment_identities(&mut tx, session.game_account_id, &detected)
+                .await?;
         } else {
             let trusted = trusted_rows
                 .into_iter()
@@ -271,7 +272,6 @@ fn sha256_hex(value: &str) -> String {
     output
 }
 
-
 fn first_enrollment_has_strong_identity(detected: &DetectedIdentity) -> bool {
     has_text(detected.game_uid.as_deref())
         || (has_text(detected.character_name.as_deref())
@@ -306,8 +306,14 @@ async fn persist_first_enrollment_identities(
     detected: &DetectedIdentity,
 ) -> Result<(), sqlx::Error> {
     let values = [
-        (IdentityType::MaskedAccount, detected.masked_account.as_deref()),
-        (IdentityType::CharacterName, detected.character_name.as_deref()),
+        (
+            IdentityType::MaskedAccount,
+            detected.masked_account.as_deref(),
+        ),
+        (
+            IdentityType::CharacterName,
+            detected.character_name.as_deref(),
+        ),
         (IdentityType::ServerName, detected.server_name.as_deref()),
         (IdentityType::GameUid, detected.game_uid.as_deref()),
     ];
