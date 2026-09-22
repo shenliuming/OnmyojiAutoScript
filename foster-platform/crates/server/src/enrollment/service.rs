@@ -134,13 +134,8 @@ impl EnrollmentService {
 
         match target.status.as_str() {
             "CREATED" | "WAITING_EMULATOR" => {}
-            "PREPARING"
-            | "WAITING_QR"
-            | "QR_READY"
-            | "WAITING_SCAN"
-            | "DETECTING_LOGIN"
-            | "VERIFYING_ACCOUNT"
-            | "SUCCESS" => {
+            "PREPARING" | "WAITING_QR" | "QR_READY" | "WAITING_SCAN" | "DETECTING_LOGIN"
+            | "VERIFYING_ACCOUNT" | "SUCCESS" => {
                 tx.commit().await?;
                 return Ok(DispatchLoginResult::AlreadyDispatched);
             }
