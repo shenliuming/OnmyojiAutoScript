@@ -4,9 +4,7 @@ use async_trait::async_trait;
 use foster_protocol::StartLoginCommand;
 use tokio::sync::Mutex;
 
-use super::{
-    LoginExecutor, LoginExecutorError, LoginIdentity, LoginPrepared,
-};
+use super::{LoginExecutor, LoginExecutorError, LoginIdentity, LoginPrepared};
 
 #[derive(Debug, Clone)]
 pub struct FakeLoginScenario {
@@ -37,10 +35,7 @@ impl FakeLoginExecutor {
         self.cancelled.lock().await.contains(session_no)
     }
 
-    async fn ensure_not_cancelled(
-        &self,
-        session_no: &str,
-    ) -> Result<(), LoginExecutorError> {
+    async fn ensure_not_cancelled(&self, session_no: &str) -> Result<(), LoginExecutorError> {
         if self.was_cancelled(session_no).await {
             Err(LoginExecutorError::Message("login cancelled".into()))
         } else {
