@@ -64,18 +64,25 @@ class FosterBridgeService:
 
         stages.append(_checkpoint("VERIFYING_ACCOUNT"))
 
-        detected_account = getattr(switcher, "last_detected_account", None) or account_hint
-        detected_character = (
-            getattr(switcher, "last_detected_character", None) or request.character_name
-        )
-        detected_server = getattr(switcher, "last_detected_server", None) or request.server_name
+        detected_account = getattr(switcher, "last_detected_account", None)
+        detected_character = getattr(switcher, "last_detected_character", None)
+        detected_server = getattr(switcher, "last_detected_server", None)
 
         detected = FosterDetectedIdentity(
             masked_account=detected_account,
             character_name=detected_character,
             server_name=detected_server,
-            game_uid=request.game_uid,
+            game_uid=None,
         )
+
+        if not detected_account or not detected_character:
+            return FosterExecuteResponse(
+                success=False,
+                code="IDENTITY_MISMATCH",
+                message="account or character was not observed from the game UI",
+                stages=stages,
+                detected_identity=detected,
+            )
 
         if request.server_name and detected_server and detected_server != request.server_name:
             return FosterExecuteResponse(
