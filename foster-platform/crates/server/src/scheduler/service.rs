@@ -1,6 +1,9 @@
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use foster_domain::{FosterJobStatus, QuietWindow, ScheduleGate, evaluate_quiet_periods};
+use foster_domain::{
+    FosterErrorCode, FosterJobStatus, QuietWindow, RetryDecision, ScheduleGate,
+    evaluate_quiet_periods,
+};
 use sqlx::MySqlPool;
 use uuid::Uuid;
 
@@ -8,10 +11,13 @@ use super::repository::{
     clear_next_run, count_successes_between, has_active_binding, has_executing_job_for_account,
     has_executing_job_for_emulator, has_nonterminal_job, insert_pending_job,
     list_due_subscription_ids, list_enabled_quiet_periods, lock_active_binding_for_account,
-    lock_due_subscription, lock_emulator_for_claim, lock_job_for_claim, lock_job_for_success,
-    lock_job_gate_context, lock_subscription_for_success, mark_job_success, resume_job_pending,
-    schedule_subscription_after_success, set_job_deferred, set_job_switching_account,
-    set_job_waiting_emulator, transition_job_status,
+    lock_due_subscription, lock_emulator_for_claim, lock_job_for_claim, lock_job_for_failure,
+    lock_job_for_success, lock_job_gate_context, lock_subscription_for_failure,
+    lock_subscription_for_success, mark_account_identity_mismatch, mark_account_relogin_required,
+    mark_job_success, restore_subscription_schedule, resume_job_pending,
+    schedule_subscription_after_success, set_job_deferred, set_job_retry,
+    set_job_switching_account, set_job_terminal_failure, set_job_waiting_emulator,
+    set_job_waiting_emulator_failure, suspend_subscription, transition_job_status,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -53,6 +59,135 @@ pub struct SchedulerService {
 impl SchedulerService {
     pub fn new(pool: MySqlPool) -> Self {
         Self { pool }
+    }
+
+    pub async fn handle_failure(
+        &self,
+        job_id: i64,
+        error_code: FosterErrorCode,
+        result_message: &str,
+        now: DateTime<Utc>,
+    ) -> Result<RetryDecision, SchedulerError> {
+        const MAX_UNKNOWN_RETRIES: i32 = 3;
+
+        let mut tx = self.pool.begin().await?;
+
+        let job = lock_job_for_failure(&mut tx, job_id)
+            .await?
+            .ok_or(SchedulerError::JobNotFound)?;
+
+        if job.status != "RUNNING" {
+            tx.rollback().await?;
+            return Err(SchedulerError::JobNotRunning);
+        }
+
+        let subscription = lock_subscription_for_failure(&mut tx, job.subscription_id)
+            .await?
+            .ok_or(SchedulerError::JobNotFound)?;
+
+        let next_retry_count = job.retry_count.saturating_add(1);
+        let error_name = error_code.as_str();
+
+        let decision = match error_code {
+            FosterErrorCode::NoSlot | FosterErrorCode::ProviderNotFound => {
+                let retry_at = now + chrono::Duration::minutes(1);
+                set_job_retry(
+                    &mut tx,
+                    job.id,
+                    next_retry_count,
+                    retry_at,
+                    error_name,
+                    result_message,
+                )
+                .await?;
+                RetryDecision::RetryAt(retry_at)
+            }
+            FosterErrorCode::NetworkError | FosterErrorCode::GameBusy => {
+                let retry_at = now + chrono::Duration::minutes(5);
+                set_job_retry(
+                    &mut tx,
+                    job.id,
+                    next_retry_count,
+                    retry_at,
+                    error_name,
+                    result_message,
+                )
+                .await?;
+                RetryDecision::RetryAt(retry_at)
+            }
+            FosterErrorCode::EmulatorOffline => {
+                set_job_waiting_emulator_failure(
+                    &mut tx,
+                    job.id,
+                    error_name,
+                    result_message,
+                )
+                .await?;
+                RetryDecision::WaitForEmulator
+            }
+            FosterErrorCode::AccountLoginExpired => {
+                set_job_terminal_failure(
+                    &mut tx,
+                    job.id,
+                    "FAILED",
+                    next_retry_count,
+                    now,
+                    error_name,
+                    result_message,
+                )
+                .await?;
+                suspend_subscription(&mut tx, subscription.id).await?;
+                mark_account_relogin_required(&mut tx, job.game_account_id).await?;
+                RetryDecision::SuspendAccount
+            }
+            FosterErrorCode::IdentityMismatch => {
+                set_job_terminal_failure(
+                    &mut tx,
+                    job.id,
+                    "IDENTITY_MISMATCH",
+                    next_retry_count,
+                    now,
+                    error_name,
+                    result_message,
+                )
+                .await?;
+                suspend_subscription(&mut tx, subscription.id).await?;
+                mark_account_identity_mismatch(&mut tx, job.game_account_id).await?;
+                RetryDecision::SuspendAccount
+            }
+            FosterErrorCode::Unknown if next_retry_count < MAX_UNKNOWN_RETRIES => {
+                let retry_at = now + chrono::Duration::minutes(5);
+                set_job_retry(
+                    &mut tx,
+                    job.id,
+                    next_retry_count,
+                    retry_at,
+                    error_name,
+                    result_message,
+                )
+                .await?;
+                RetryDecision::RetryAt(retry_at)
+            }
+            FosterErrorCode::Unknown => {
+                set_job_terminal_failure(
+                    &mut tx,
+                    job.id,
+                    "FAILED",
+                    next_retry_count,
+                    now,
+                    error_name,
+                    result_message,
+                )
+                .await?;
+                let next_run_at =
+                    now + chrono::Duration::minutes(i64::from(subscription.interval_minutes));
+                restore_subscription_schedule(&mut tx, subscription.id, next_run_at).await?;
+                RetryDecision::FailTerminal
+            }
+        };
+
+        tx.commit().await?;
+        Ok(decision)
     }
 
     pub async fn complete_success(
