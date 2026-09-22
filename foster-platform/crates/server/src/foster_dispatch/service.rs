@@ -295,6 +295,15 @@ impl FosterDispatchService {
             verify_identity(&stored, &detected),
             IdentityDecision::Verified { .. }
         ) {
+            if target.resource_mode == "PLATFORM" {
+                ResourcePoolService::new(self.pool.clone())
+                    .release_for_job(
+                        event.job_id,
+                        "identity mismatch after OAS execution",
+                        event.completed_at,
+                    )
+                    .await?;
+            }
             self.scheduler
                 .handle_failure(
                     event.job_id,
