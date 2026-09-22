@@ -1,12 +1,8 @@
-use std::{
-    collections::VecDeque,
-    sync::Arc,
-};
+use std::{collections::VecDeque, sync::Arc};
 
 use async_trait::async_trait;
 use foster_agent::emulator::{
-    CommandOutput, CommandRunner, EmulatorDriver, EmulatorDriverError,
-    GenericAdbEmulatorDriver,
+    CommandOutput, CommandRunner, EmulatorDriver, EmulatorDriverError, GenericAdbEmulatorDriver,
 };
 use tokio::sync::Mutex;
 
@@ -69,10 +65,7 @@ async fn static_inventory_exposes_emulator_descriptor() -> anyhow::Result<()> {
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].emulator_code, "emu-01");
     assert_eq!(instances[0].driver_type, "ADB");
-    assert_eq!(
-        instances[0].adb_serial.as_deref(),
-        Some("127.0.0.1:16384")
-    );
+    assert_eq!(instances[0].adb_serial.as_deref(), Some("127.0.0.1:16384"));
     assert_eq!(
         driver.oas_config_map().get("emu-01").map(String::as_str),
         Some("oas-01")
@@ -89,11 +82,8 @@ async fn screenshot_returns_raw_png_bytes() -> anyhow::Result<()> {
         stdout: png.clone(),
         stderr: Vec::new(),
     }]);
-    let driver = GenericAdbEmulatorDriver::from_json_with_runner(
-        config_json(),
-        "adb".into(),
-        runner,
-    )?;
+    let driver =
+        GenericAdbEmulatorDriver::from_json_with_runner(config_json(), "adb".into(), runner)?;
 
     let bytes = driver.screenshot("emu-01").await?;
 
@@ -144,7 +134,6 @@ fn duplicate_emulator_code_is_rejected() {
     assert!(result.is_err());
 }
 
-
 #[tokio::test]
 async fn adb_state_controls_emulator_health() -> anyhow::Result<()> {
     use foster_domain::EmulatorStatus;
@@ -161,20 +150,11 @@ async fn adb_state_controls_emulator_health() -> anyhow::Result<()> {
             stderr: b"offline".to_vec(),
         },
     ]);
-    let driver = GenericAdbEmulatorDriver::from_json_with_runner(
-        config_json(),
-        "adb".into(),
-        runner,
-    )?;
+    let driver =
+        GenericAdbEmulatorDriver::from_json_with_runner(config_json(), "adb".into(), runner)?;
 
-    assert_eq!(
-        driver.status("emu-01").await?,
-        EmulatorStatus::Idle
-    );
-    assert_eq!(
-        driver.status("emu-01").await?,
-        EmulatorStatus::Offline
-    );
+    assert_eq!(driver.status("emu-01").await?, EmulatorStatus::Idle);
+    assert_eq!(driver.status("emu-01").await?, EmulatorStatus::Offline);
 
     Ok(())
 }
