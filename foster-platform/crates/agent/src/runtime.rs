@@ -331,16 +331,18 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
     }
 
     async fn send_heartbeat(&self, socket: &mut AgentWebSocket) -> Result<(), AgentRuntimeError> {
-        let emulators = self
-            .driver
-            .list_instances()
-            .await?
-            .into_iter()
-            .map(|emulator| EmulatorHeartbeat {
+        let mut emulators = Vec::new();
+        for emulator in self.driver.list_instances().await? {
+            let status = self
+                .driver
+                .status(&emulator.emulator_code)
+                .await
+                .unwrap_or(EmulatorStatus::Error);
+            emulators.push(EmulatorHeartbeat {
                 emulator_code: emulator.emulator_code,
-                status: EmulatorStatus::Idle,
-            })
-            .collect();
+                status,
+            });
+        }
 
         self.send_event(
             socket,
