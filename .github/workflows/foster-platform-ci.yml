@@ -49,6 +49,7 @@ jobs:
         run: >-
           python -m compileall
           ../module/foster_bridge
+          ../module/login_bridge
           ../tasks/KekkaiUtilize/foster_once.py
           ../tasks/KekkaiUtilize/provider_target.py
           ../tasks/KekkaiUtilize/provider_target_test.py
