@@ -548,7 +548,6 @@ pub async fn count_successes_between(
     .await
 }
 
-
 #[derive(Debug, sqlx::FromRow)]
 pub struct FailureJobRow {
     pub id: i64,
@@ -744,7 +743,6 @@ pub async fn mark_account_identity_mismatch(
 
     Ok(())
 }
-
 
 pub async fn list_schedulable_job_ids(
     pool: &MySqlPool,
