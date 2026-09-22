@@ -57,13 +57,7 @@ impl SchedulerService {
         if let Some(pause_until) = context.manual_pause_until {
             let pause_until = DateTime::<Utc>::from_naive_utc_and_offset(pause_until, Utc);
             if pause_until > now {
-                set_job_deferred(
-                    &mut tx,
-                    context.id,
-                    "DEFERRED_MANUAL",
-                    pause_until,
-                )
-                .await?;
+                set_job_deferred(&mut tx, context.id, "DEFERRED_MANUAL", pause_until).await?;
                 tx.commit().await?;
                 return Ok(JobGateResult::DeferredManual(pause_until));
             }
@@ -76,8 +70,7 @@ impl SchedulerService {
             resume_job_pending(&mut tx, context.id).await?;
         }
 
-        let quiet_rows =
-            list_enabled_quiet_periods(&mut tx, context.game_account_id).await?;
+        let quiet_rows = list_enabled_quiet_periods(&mut tx, context.game_account_id).await?;
 
         let mut quiet_until: Option<DateTime<Utc>> = None;
 
