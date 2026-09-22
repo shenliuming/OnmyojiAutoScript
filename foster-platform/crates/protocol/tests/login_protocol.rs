@@ -1,7 +1,7 @@
 use chrono::{TimeZone, Utc};
 use foster_protocol::{
-    AgentEnvelope, AgentEvent, LoginIdentityDetected, LoginQrReady,
-    PROTOCOL_VERSION, ServerCommand, ServerEnvelope, StartLoginCommand,
+    AgentEnvelope, AgentEvent, LoginIdentityDetected, LoginQrReady, PROTOCOL_VERSION,
+    ServerCommand, ServerEnvelope, StartLoginCommand,
 };
 use uuid::Uuid;
 
