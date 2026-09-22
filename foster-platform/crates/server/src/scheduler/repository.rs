@@ -754,6 +754,7 @@ pub async fn list_schedulable_job_ids(
          FROM foster_job
          WHERE status = 'PENDING'
             OR status = 'WAITING_EMULATOR'
+            OR status = 'WAITING_RESOURCE'
             OR (
                 status IN ('DEFERRED_QUIET', 'DEFERRED_MANUAL')
                 AND deferred_until IS NOT NULL
