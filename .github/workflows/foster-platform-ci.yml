@@ -30,6 +30,7 @@ jobs:
           --health-retries=20
     env:
       DATABASE_URL: mysql://root:foster@127.0.0.1:3307/mysql
+      RUST_TEST_THREADS: 1
     defaults:
       run:
         working-directory: foster-platform
