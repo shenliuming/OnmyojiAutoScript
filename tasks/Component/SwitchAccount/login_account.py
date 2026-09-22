@@ -275,6 +275,12 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                         return False
                     # selectAccount 后更新图片
                     self.screenshot()
+                try:
+                    selected_account = self.O_SA_ACCOUNT_ACCOUNT_SELECTED.ocr_single(self.device.image)
+                    if selected_account and accountInfo.is_account_alias(selected_account):
+                        self.last_detected_account = selected_account
+                except Exception:
+                    pass
                 self.ui_click(self.I_SA_ACCOUNT_LOGIN_BTN, stop=self.I_SA_LOGIN_FORM_APPLE, interval=1)
                 continue
             # 在用户中心界面
@@ -316,8 +322,6 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         if isAccountLogon and isCharacterSelected:
             # 成功登录账号 找到角色
             # self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_ENTER_GAME_BTN, stop=self.I_CHECK_LOGIN_FORM)
-            if not getattr(self, "last_detected_character", None):
-                self.last_detected_character = accountInfo.character
             if not getattr(self, "last_detected_server", None):
                 try:
                     current_server = self.get_svr_name()
