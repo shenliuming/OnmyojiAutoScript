@@ -56,7 +56,6 @@ pub async fn release_pending_binding(pool: &MySqlPool, binding_id: i64) -> Resul
     Ok(())
 }
 
-
 pub async fn mark_login_preparing(
     pool: &MySqlPool,
     host_id: i64,
