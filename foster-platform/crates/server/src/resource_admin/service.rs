@@ -7,8 +7,7 @@ use sqlx::MySqlPool;
 use super::repository::{
     ProviderRow, ResourceCycleRow, game_account_exists, insert_resource_cycle, list_cycles,
     list_providers, provider_exists, resource_cycle_exists, update_cycle_status,
-    update_provider_status,
-    upsert_friend_binding, upsert_provider,
+    update_provider_status, upsert_friend_binding, upsert_provider,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -330,9 +329,7 @@ fn cycle_view(row: ResourceCycleRow) -> ResourceCycleView {
 
 fn map_provider_db_error(error: sqlx::Error) -> ResourceAdminError {
     if let sqlx::Error::Database(database) = &error {
-        if database.is_unique_violation()
-            && database.message().contains("uk_provider_alias")
-        {
+        if database.is_unique_violation() && database.message().contains("uk_provider_alias") {
             return ResourceAdminError::ProviderAliasConflict;
         }
     }
