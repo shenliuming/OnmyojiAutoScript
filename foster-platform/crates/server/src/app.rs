@@ -13,6 +13,7 @@ use crate::{
         sse::login_status_events,
     },
     foster_dispatch::FosterDispatchService,
+    resource_pool::ResourcePoolService,
     scheduler::SchedulerService,
 };
 
@@ -78,8 +79,13 @@ fn spawn_foster_scheduler(state: AppState) {
         loop {
             tokio::time::sleep(interval).await;
 
+            let now = chrono::Utc::now();
+            if let Err(error) = ResourcePoolService::new(state.pool.clone()).reap(now).await {
+                tracing::warn!(error = %error, "resource pool reap failed");
+            }
+
             let scheduler = SchedulerService::new(state.pool.clone());
-            let report = match scheduler.run_once(chrono::Utc::now()).await {
+            let report = match scheduler.run_once(now).await {
                 Ok(report) => report,
                 Err(error) => {
                     tracing::warn!(error = %error, "foster scheduler tick failed");
