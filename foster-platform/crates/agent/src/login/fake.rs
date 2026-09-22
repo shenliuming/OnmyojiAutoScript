@@ -4,12 +4,15 @@ use async_trait::async_trait;
 use foster_protocol::StartLoginCommand;
 use tokio::sync::Mutex;
 
-use super::{LoginExecution, LoginExecutor, LoginExecutorError};
+use super::{
+    LoginExecutor, LoginExecutorError, LoginIdentity, LoginPrepared,
+};
 
 #[derive(Debug, Clone)]
 pub struct FakeLoginScenario {
     pub qr_payload: String,
     pub qr_ttl: Duration,
+    pub identity_delay: Duration,
     pub masked_account: Option<String>,
     pub character_name: Option<String>,
     pub server_name: Option<String>,
@@ -33,17 +36,41 @@ impl FakeLoginExecutor {
     pub async fn was_cancelled(&self, session_no: &str) -> bool {
         self.cancelled.lock().await.contains(session_no)
     }
+
+    async fn ensure_not_cancelled(
+        &self,
+        session_no: &str,
+    ) -> Result<(), LoginExecutorError> {
+        if self.was_cancelled(session_no).await {
+            Err(LoginExecutorError::Message("login cancelled".into()))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[async_trait]
 impl LoginExecutor for FakeLoginExecutor {
-    async fn execute(
+    async fn prepare(
         &self,
-        _command: &StartLoginCommand,
-    ) -> Result<LoginExecution, LoginExecutorError> {
-        Ok(LoginExecution {
+        command: &StartLoginCommand,
+    ) -> Result<LoginPrepared, LoginExecutorError> {
+        self.ensure_not_cancelled(&command.session_no).await?;
+
+        Ok(LoginPrepared {
             qr_payload: self.scenario.qr_payload.clone(),
             qr_ttl: self.scenario.qr_ttl,
+        })
+    }
+
+    async fn wait_identity(
+        &self,
+        command: &StartLoginCommand,
+    ) -> Result<LoginIdentity, LoginExecutorError> {
+        tokio::time::sleep(self.scenario.identity_delay).await;
+        self.ensure_not_cancelled(&command.session_no).await?;
+
+        Ok(LoginIdentity {
             masked_account: self.scenario.masked_account.clone(),
             character_name: self.scenario.character_name.clone(),
             server_name: self.scenario.server_name.clone(),
