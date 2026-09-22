@@ -289,7 +289,6 @@ async fn identity_event_moves_session_to_verifying_account(pool: MySqlPool) -> a
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
 async fn login_failed_releases_pending_binding(pool: MySqlPool) -> anyhow::Result<()> {
     let (service, host_id, session_no) = create_session(&pool).await?;
