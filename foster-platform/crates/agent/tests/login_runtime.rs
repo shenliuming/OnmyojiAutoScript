@@ -32,6 +32,7 @@ fn test_config(server_ws_url: String) -> AgentConfig {
     }
 }
 
+#[allow(clippy::result_large_err)]
 async fn accept_authenticated(
     listener: &TcpListener,
 ) -> anyhow::Result<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>> {
