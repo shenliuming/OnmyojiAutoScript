@@ -64,15 +64,15 @@ class FosterBridgeService:
 
         stages.append(_checkpoint("VERIFYING_ACCOUNT"))
 
-        detected_server = request.server_name
-        try:
-            detected_server = switcher.get_svr_name() or detected_server
-        except Exception:
-            pass
+        detected_account = getattr(switcher, "last_detected_account", None) or account_hint
+        detected_character = (
+            getattr(switcher, "last_detected_character", None) or request.character_name
+        )
+        detected_server = getattr(switcher, "last_detected_server", None) or request.server_name
 
         detected = FosterDetectedIdentity(
-            masked_account=account_hint,
-            character_name=request.character_name,
+            masked_account=detected_account,
+            character_name=detected_character,
             server_name=detected_server,
             game_uid=request.game_uid,
         )
