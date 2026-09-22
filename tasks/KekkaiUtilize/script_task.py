@@ -431,6 +431,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         :return:
         """
         logger.hr('Start utilize')
+        self.foster_bridge_error_code = None
+        self.foster_bridge_error_message = None
         if self.first_utilize:
             self.swipe(self.S_U_END, interval=3)
             self.first_utilize = False
@@ -445,6 +447,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
         # --------------- 结界卡选择 ---------------
         if not self._select_optimal_resource_card():
+            self.foster_bridge_error_code = 'PROVIDER_NOT_FOUND'
+            self.foster_bridge_error_message = 'no suitable foster resource card found'
             return False
 
         # 找到卡,重置次数
@@ -456,6 +460,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             logger.warning('Cannot find enter realm button')
             # 可能是滑动的时候出错
             logger.warning('The best reason is that the swipe is wrong')
+            self.foster_bridge_error_code = 'GAME_BUSY'
+            self.foster_bridge_error_message = 'cannot enter selected friend realm'
             return
         wait_timer = Timer(20)
         wait_timer.start()
@@ -475,6 +481,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             if wait_timer.reached():
                 self.save_image(wait_time=0, push_flag=False, content='进入好友结界超时', image_type='png')
                 logger.warning('Appear friend realm timeout')
+                self.foster_bridge_error_code = 'GAME_BUSY'
+                self.foster_bridge_error_message = 'enter friend realm timed out'
                 return
             if self.appear_then_click(self.I_CHECK_FRIEND_REALM_2, interval=1.5):
                 logger.info('Click too fast to enter the friend\'s realm pool')
@@ -497,6 +505,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             # 没有坑位可能是其他人的手速太快了抢占了
             self.save_image(content='没有坑位了', wait_time=0, push_flag=False, image_type='png')
             logger.warning('没有坑位可能是其他人的手速太快了抢占了')
+            self.foster_bridge_error_code = 'NO_SLOT'
+            self.foster_bridge_error_message = 'friend realm has no available foster slot'
             return True
         # 切换式神的类型
         self.switch_shikigami_class(shikigami_class)
