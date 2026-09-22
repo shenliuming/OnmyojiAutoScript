@@ -575,3 +575,23 @@ pub async fn mark_login_preparing_after_dispatch(
 
     Ok(result.rows_affected() == 1)
 }
+
+
+pub async fn activate_pending_subscriptions(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE foster_subscription
+         SET status = 'ACTIVE',
+             next_run_at = COALESCE(next_run_at, NOW(3))
+         WHERE game_account_id = ?
+           AND status = 'PENDING_LOGIN'
+           AND end_at > NOW(3)",
+    )
+    .bind(game_account_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected())
+}
