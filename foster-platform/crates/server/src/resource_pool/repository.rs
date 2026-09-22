@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use sqlx::{MySql, Transaction};
 
 #[derive(Debug, sqlx::FromRow)]
@@ -56,13 +56,11 @@ pub async fn load_live_allocation(
     sqlx::query_as::<_, AllocationRow>(
         "SELECT
             a.id,
-            a.job_id,
             a.resource_cycle_id,
             a.provider_account_id,
             p.provider_alias,
             c.resource_type,
-            a.status,
-            c.end_at
+            a.status
          FROM foster_resource_allocation a
          JOIN foster_resource_cycle c ON c.id = a.resource_cycle_id
          JOIN provider_account p ON p.id = a.provider_account_id
@@ -241,7 +239,6 @@ pub struct ReleasableAllocationRow {
     pub id: i64,
     pub resource_cycle_id: i64,
     pub provider_account_id: i64,
-    pub status: String,
 }
 
 pub async fn lock_releasable_allocation(
@@ -251,10 +248,8 @@ pub async fn lock_releasable_allocation(
     sqlx::query_as::<_, ReleasableAllocationRow>(
         "SELECT
             id,
-            job_id,
             resource_cycle_id,
-            provider_account_id,
-            status
+            provider_account_id
          FROM foster_resource_allocation
          WHERE job_id = ?
            AND status IN ('RESERVED', 'CONFIRMED')
