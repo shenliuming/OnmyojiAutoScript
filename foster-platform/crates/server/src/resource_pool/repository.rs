@@ -309,6 +309,23 @@ pub async fn release_cycle_slot(
     Ok(())
 }
 
+pub async fn mark_cycle_full(
+    tx: &mut Transaction<'_, MySql>,
+    cycle_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_resource_cycle
+         SET status = 'FULL'
+         WHERE id = ?
+           AND status = 'AVAILABLE'",
+    )
+    .bind(cycle_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn mark_friend_binding_suspect(
     tx: &mut Transaction<'_, MySql>,
     game_account_id: i64,
