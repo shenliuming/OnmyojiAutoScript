@@ -50,6 +50,10 @@ jobs:
           python -m compileall
           ../module/foster_bridge
           ../tasks/KekkaiUtilize/foster_once.py
+          ../tasks/KekkaiUtilize/provider_target.py
+          ../tasks/KekkaiUtilize/provider_target_test.py
           ../tasks/KekkaiUtilize/script_task.py
           ../tasks/Component/SwitchAccount/login_account.py
           ../module/server/app.py
+      - name: Test platform provider targeting
+        run: cd .. && python -m unittest tasks.KekkaiUtilize.provider_target_test
