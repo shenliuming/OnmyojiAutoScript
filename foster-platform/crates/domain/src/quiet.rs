@@ -48,8 +48,7 @@ pub fn evaluate_quiet_periods(
             };
             let end = NaiveDateTime::new(end_date, window.end_time);
 
-            let protected_start =
-                start - Duration::minutes(window.before_buffer_minutes.max(0));
+            let protected_start = start - Duration::minutes(window.before_buffer_minutes.max(0));
             let protected_end = end + Duration::minutes(window.after_buffer_minutes.max(0));
 
             let Some(start_utc) = resolve_local(timezone, protected_start, Boundary::Start) else {
