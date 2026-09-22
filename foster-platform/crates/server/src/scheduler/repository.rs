@@ -437,3 +437,114 @@ pub async fn transition_job_status(
 
     Ok(result.rows_affected() == 1)
 }
+
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct SuccessJobRow {
+    pub id: i64,
+    pub subscription_id: i64,
+    pub status: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct SuccessSubscriptionRow {
+    pub id: i64,
+    pub interval_minutes: i32,
+}
+
+pub async fn lock_job_for_success(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+) -> Result<Option<SuccessJobRow>, sqlx::Error> {
+    sqlx::query_as::<_, SuccessJobRow>(
+        "SELECT id, subscription_id, status
+         FROM foster_job
+         WHERE id = ?
+         FOR UPDATE",
+    )
+    .bind(job_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn lock_subscription_for_success(
+    tx: &mut Transaction<'_, MySql>,
+    subscription_id: i64,
+) -> Result<Option<SuccessSubscriptionRow>, sqlx::Error> {
+    sqlx::query_as::<_, SuccessSubscriptionRow>(
+        "SELECT id, interval_minutes
+         FROM foster_subscription
+         WHERE id = ?
+         FOR UPDATE",
+    )
+    .bind(subscription_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn mark_job_success(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+    success_at: DateTime<Utc>,
+    remaining_seconds: Option<i32>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = 'SUCCESS',
+             finished_at = ?,
+             remaining_seconds = ?,
+             error_code = NULL,
+             result_message = NULL,
+             retry_after = NULL
+         WHERE id = ?",
+    )
+    .bind(success_at.naive_utc())
+    .bind(remaining_seconds)
+    .bind(job_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn schedule_subscription_after_success(
+    tx: &mut Transaction<'_, MySql>,
+    subscription_id: i64,
+    success_at: DateTime<Utc>,
+    next_run_at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_subscription
+         SET last_success_at = ?,
+             next_run_at = ?
+         WHERE id = ?",
+    )
+    .bind(success_at.naive_utc())
+    .bind(next_run_at.naive_utc())
+    .bind(subscription_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn count_successes_between(
+    pool: &MySqlPool,
+    game_account_id: i64,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM foster_job
+         WHERE game_account_id = ?
+           AND status = 'SUCCESS'
+           AND finished_at >= ?
+           AND finished_at < ?",
+    )
+    .bind(game_account_id)
+    .bind(start.naive_utc())
+    .bind(end.naive_utc())
+    .fetch_one(pool)
+    .await
+}
