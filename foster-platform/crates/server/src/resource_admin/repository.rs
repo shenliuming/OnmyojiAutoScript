@@ -66,29 +66,59 @@ pub async fn upsert_provider(
     server_name: Option<&str>,
     status: &str,
 ) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query(
-        "INSERT INTO provider_account(
-            provider_code, game_uid, nickname, provider_alias, server_name, status
-         )
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-            id = LAST_INSERT_ID(id),
-            game_uid = VALUES(game_uid),
-            nickname = VALUES(nickname),
-            provider_alias = VALUES(provider_alias),
-            server_name = VALUES(server_name),
-            status = VALUES(status)",
+    let mut tx = pool.begin().await?;
+
+    let existing_id: Option<i64> = sqlx::query_scalar(
+        "SELECT id
+         FROM provider_account
+         WHERE provider_code = ?
+         FOR UPDATE",
     )
     .bind(provider_code)
-    .bind(game_uid)
-    .bind(nickname)
-    .bind(provider_alias)
-    .bind(server_name)
-    .bind(status)
-    .execute(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
-    Ok(result.last_insert_id() as i64)
+    let id = if let Some(id) = existing_id {
+        sqlx::query(
+            "UPDATE provider_account
+             SET game_uid = ?,
+                 nickname = ?,
+                 provider_alias = ?,
+                 server_name = ?,
+                 status = ?
+             WHERE id = ?",
+        )
+        .bind(game_uid)
+        .bind(nickname)
+        .bind(provider_alias)
+        .bind(server_name)
+        .bind(status)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+        id
+    } else {
+        sqlx::query(
+            "INSERT INTO provider_account(
+                provider_code, game_uid, nickname,
+                provider_alias, server_name, status
+             )
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(provider_code)
+        .bind(game_uid)
+        .bind(nickname)
+        .bind(provider_alias)
+        .bind(server_name)
+        .bind(status)
+        .execute(&mut *tx)
+        .await?
+        .last_insert_id() as i64
+    };
+
+    tx.commit().await?;
+    Ok(id)
 }
 
 pub async fn update_provider_status(
