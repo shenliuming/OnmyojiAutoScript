@@ -257,10 +257,7 @@ pub async fn set_manual_pause_until(
     Ok(())
 }
 
-pub async fn clear_manual_pause(
-    pool: &MySqlPool,
-    subscription_id: i64,
-) -> Result<(), sqlx::Error> {
+pub async fn clear_manual_pause(pool: &MySqlPool, subscription_id: i64) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     sqlx::query(
