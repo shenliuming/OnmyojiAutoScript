@@ -360,3 +360,46 @@ async fn emulator_contention_leaves_second_job_waiting(pool: MySqlPool) -> anyho
     assert_eq!(statuses[1].1, "WAITING_EMULATOR");
     Ok(())
 }
+
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn waiting_resource_job_can_be_claimed_again(pool: MySqlPool) -> anyhow::Result<()> {
+    let (_, emulator_id) = seed_host_emulator(&pool).await?;
+    let plan_id = seed_plan(&pool).await?;
+    let now = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
+
+    let fixture = seed_account_subscription(
+        &pool,
+        emulator_id,
+        plan_id,
+        90006,
+        1,
+        "SUB-RUN-ONCE-RESOURCE",
+        None,
+    )
+    .await?;
+
+    let job_id = insert_job(
+        &pool,
+        "JOB-WAITING-RESOURCE",
+        &fixture,
+        "WAITING_RESOURCE",
+        now - chrono::Duration::minutes(10),
+        None,
+        None,
+    )
+    .await?;
+
+    let scheduler = SchedulerService::new(pool.clone());
+    let report = scheduler.run_once(now).await?;
+
+    assert_eq!(report.claimed_job_ids, vec![job_id]);
+
+    let status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(status, "SWITCHING_ACCOUNT");
+
+    Ok(())
+}
