@@ -131,15 +131,18 @@ async fn happy_path_transitions_to_success(pool: MySqlPool) -> anyhow::Result<()
             .await?
     );
 
-    let row: (String, Option<chrono::NaiveDateTime>, Option<chrono::NaiveDateTime>) =
-        sqlx::query_as(
-            "SELECT status, started_at, finished_at
+    let row: (
+        String,
+        Option<chrono::NaiveDateTime>,
+        Option<chrono::NaiveDateTime>,
+    ) = sqlx::query_as(
+        "SELECT status, started_at, finished_at
              FROM foster_job
              WHERE id = ?",
-        )
-        .bind(job_id)
-        .fetch_one(&pool)
-        .await?;
+    )
+    .bind(job_id)
+    .fetch_one(&pool)
+    .await?;
 
     assert_eq!(row.0, "SUCCESS");
     assert!(row.1.is_some());
