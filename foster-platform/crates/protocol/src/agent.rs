@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use foster_domain::EmulatorStatus;
 use serde::{Deserialize, Serialize};
 
@@ -42,10 +43,48 @@ pub struct Pong {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginPreparing {
+    pub session_no: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginQrReady {
+    pub session_no: String,
+    pub qr_payload: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginQrExpired {
+    pub session_no: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginIdentityDetected {
+    pub session_no: String,
+    pub masked_account: Option<String>,
+    pub character_name: Option<String>,
+    pub server_name: Option<String>,
+    pub game_uid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginFailed {
+    pub session_no: String,
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AgentEvent {
     Hello(AgentHello),
     Heartbeat(Heartbeat),
     EmulatorSnapshot(EmulatorSnapshot),
     Pong(Pong),
+    LoginPreparing(LoginPreparing),
+    LoginQrReady(LoginQrReady),
+    LoginQrExpired(LoginQrExpired),
+    LoginIdentityDetected(LoginIdentityDetected),
+    LoginFailed(LoginFailed),
 }
