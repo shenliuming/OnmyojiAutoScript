@@ -58,6 +58,7 @@ pub struct ResourceReapReport {
 pub struct ResourcePoolService {
     pool: MySqlPool,
     min_remaining_minutes: i64,
+    retry_seconds: i64,
 }
 
 impl ResourcePoolService {
@@ -68,14 +69,26 @@ impl ResourcePoolService {
             .filter(|value| *value >= 0)
             .unwrap_or(330);
 
+        let retry_seconds = std::env::var("FOSTER_RESOURCE_RETRY_SECONDS")
+            .ok()
+            .and_then(|value| value.parse::<i64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(60);
+
         Self {
             pool,
             min_remaining_minutes,
+            retry_seconds,
         }
     }
 
     pub fn with_min_remaining_minutes(mut self, minutes: i64) -> Self {
         self.min_remaining_minutes = minutes.max(0);
+        self
+    }
+
+    pub fn with_retry_seconds(mut self, seconds: i64) -> Self {
+        self.retry_seconds = seconds.max(1);
         self
     }
 
@@ -157,6 +170,7 @@ impl ResourcePoolService {
             &mut tx,
             job.id,
             "no eligible platform resource is currently available",
+            now + chrono::Duration::seconds(self.retry_seconds),
         )
         .await?;
         tx.commit().await?;
