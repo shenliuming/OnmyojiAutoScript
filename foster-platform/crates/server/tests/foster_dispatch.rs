@@ -781,3 +781,59 @@ async fn no_slot_quarantines_cycle_and_next_attempt_uses_other_provider(
 
     Ok(())
 }
+
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn insufficient_identity_does_not_reserve_platform_slot(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_fixture(&pool, "PLATFORM").await?;
+    let base = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
+    let (_provider_id, cycle_id) =
+        seed_platform_resource(&pool, fixture.account_id, base, "资源SAFE01").await?;
+
+    sqlx::query(
+        "DELETE FROM game_account_identity
+         WHERE game_account_id = ?",
+    )
+    .bind(fixture.account_id)
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "UPDATE game_account
+         SET character_name = NULL,
+             server_name = NULL,
+             game_uid = NULL
+         WHERE id = ?",
+    )
+    .bind(fixture.account_id)
+    .execute(&pool)
+    .await?;
+
+    let service = FosterDispatchService::new(pool.clone());
+    let result = service
+        .dispatch_job(fixture.job_id, &AgentRegistry::default())
+        .await?;
+
+    assert_eq!(result, DispatchFosterResult::RejectedIdentity);
+
+    let occupied_slots: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(occupied_slots, 0);
+
+    let allocation_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM foster_resource_allocation
+         WHERE job_id = ?",
+    )
+    .bind(fixture.job_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(allocation_count, 0);
+
+    Ok(())
+}
