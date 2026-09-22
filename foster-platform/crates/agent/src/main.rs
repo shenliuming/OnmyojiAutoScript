@@ -1,9 +1,7 @@
 use std::{collections::HashMap, time::Duration};
 
 use foster_agent::{
-    config::AgentConfig,
-    emulator::FakeEmulatorDriver,
-    foster::HttpOasFosterExecutor,
+    config::AgentConfig, emulator::FakeEmulatorDriver, foster::HttpOasFosterExecutor,
     runtime::AgentRuntime,
 };
 
@@ -40,8 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let config = AgentConfig::production(server_ws_url, agent_token, agent_id, host_id);
-    let foster_executor =
-        HttpOasFosterExecutor::new(oas_base_url, oas_config_map, foster_timeout);
+    let foster_executor = HttpOasFosterExecutor::new(oas_base_url, oas_config_map, foster_timeout);
     let runtime = AgentRuntime::new(config, FakeEmulatorDriver::new(Vec::new()))
         .with_foster_executor(foster_executor);
 
