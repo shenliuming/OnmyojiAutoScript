@@ -402,7 +402,6 @@ pub async fn set_job_switching_account(
     Ok(())
 }
 
-
 pub async fn transition_job_status(
     pool: &MySqlPool,
     job_id: i64,
