@@ -1,8 +1,6 @@
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use foster_domain::{
-    FosterJobStatus, QuietWindow, ScheduleGate, evaluate_quiet_periods,
-};
+use foster_domain::{FosterJobStatus, QuietWindow, ScheduleGate, evaluate_quiet_periods};
 use sqlx::MySqlPool;
 use uuid::Uuid;
 
@@ -256,29 +254,17 @@ impl SchedulerService {
     }
 }
 
-
 fn is_allowed_transition(expected: FosterJobStatus, next: FosterJobStatus) -> bool {
     matches!(
         (expected, next),
         (
             FosterJobStatus::SwitchingAccount,
             FosterJobStatus::VerifyingAccount
-        ) | (
-            FosterJobStatus::VerifyingAccount,
-            FosterJobStatus::Running
-        ) | (
-            FosterJobStatus::Running,
-            FosterJobStatus::Success
-        ) | (
-            FosterJobStatus::Running,
-            FosterJobStatus::Retry
-        ) | (
-            FosterJobStatus::Running,
-            FosterJobStatus::Failed
-        ) | (
-            FosterJobStatus::Running,
-            FosterJobStatus::IdentityMismatch
-        )
+        ) | (FosterJobStatus::VerifyingAccount, FosterJobStatus::Running)
+            | (FosterJobStatus::Running, FosterJobStatus::Success)
+            | (FosterJobStatus::Running, FosterJobStatus::Retry)
+            | (FosterJobStatus::Running, FosterJobStatus::Failed)
+            | (FosterJobStatus::Running, FosterJobStatus::IdentityMismatch)
     )
 }
 
