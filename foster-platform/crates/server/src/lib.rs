@@ -6,5 +6,6 @@ pub mod enrollment;
 pub mod foster_dispatch;
 pub mod onboarding;
 pub mod public_portal;
+pub mod resource_admin;
 pub mod resource_pool;
 pub mod scheduler;
