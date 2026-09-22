@@ -16,10 +16,22 @@ def provider_alias_matches(expected: str, observed: str) -> bool:
         return False
     if expected_norm == observed_norm:
         return True
-    shortest = min(len(expected_norm), len(observed_norm))
-    return shortest >= 3 and (
-        expected_norm in observed_norm or observed_norm in expected_norm
-    )
+
+    if not observed_norm.startswith(expected_norm):
+        return False
+
+    suffix = observed_norm[len(expected_norm):]
+    return bool(re.fullmatch(r"(?:lv|等级)\d{1,3}", suffix))
+
+
+def expected_resource_card_type(resource_type: str) -> Optional[str]:
+    return {
+        "FISH": "斗鱼",
+        "DOUYU": "斗鱼",
+        "TAIKO_JADE": "太鼓",
+        "JADE": "太鼓",
+        "TAIKO": "太鼓",
+    }.get((resource_type or "").upper())
 
 
 def box_center_y(box: Sequence[Sequence[float]], origin_y: float = 0) -> float:
