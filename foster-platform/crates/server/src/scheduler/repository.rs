@@ -547,3 +547,200 @@ pub async fn count_successes_between(
     .fetch_one(pool)
     .await
 }
+
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct FailureJobRow {
+    pub id: i64,
+    pub subscription_id: i64,
+    pub game_account_id: i64,
+    pub status: String,
+    pub retry_count: i32,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct FailureSubscriptionRow {
+    pub id: i64,
+    pub interval_minutes: i32,
+}
+
+pub async fn lock_job_for_failure(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+) -> Result<Option<FailureJobRow>, sqlx::Error> {
+    sqlx::query_as::<_, FailureJobRow>(
+        "SELECT id, subscription_id, game_account_id, status, retry_count
+         FROM foster_job
+         WHERE id = ?
+         FOR UPDATE",
+    )
+    .bind(job_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn lock_subscription_for_failure(
+    tx: &mut Transaction<'_, MySql>,
+    subscription_id: i64,
+) -> Result<Option<FailureSubscriptionRow>, sqlx::Error> {
+    sqlx::query_as::<_, FailureSubscriptionRow>(
+        "SELECT id, interval_minutes
+         FROM foster_subscription
+         WHERE id = ?
+         FOR UPDATE",
+    )
+    .bind(subscription_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn set_job_retry(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+    retry_count: i32,
+    retry_after: DateTime<Utc>,
+    error_code: &str,
+    result_message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = 'RETRY',
+             retry_count = ?,
+             retry_after = ?,
+             error_code = ?,
+             result_message = ?,
+             finished_at = NULL
+         WHERE id = ?",
+    )
+    .bind(retry_count)
+    .bind(retry_after.naive_utc())
+    .bind(error_code)
+    .bind(result_message)
+    .bind(job_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_job_waiting_emulator_failure(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+    error_code: &str,
+    result_message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = 'WAITING_EMULATOR',
+             retry_after = NULL,
+             error_code = ?,
+             result_message = ?,
+             finished_at = NULL
+         WHERE id = ?",
+    )
+    .bind(error_code)
+    .bind(result_message)
+    .bind(job_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_job_terminal_failure(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+    status: &str,
+    retry_count: i32,
+    failed_at: DateTime<Utc>,
+    error_code: &str,
+    result_message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = ?,
+             retry_count = ?,
+             retry_after = NULL,
+             error_code = ?,
+             result_message = ?,
+             finished_at = ?
+         WHERE id = ?",
+    )
+    .bind(status)
+    .bind(retry_count)
+    .bind(error_code)
+    .bind(result_message)
+    .bind(failed_at.naive_utc())
+    .bind(job_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn suspend_subscription(
+    tx: &mut Transaction<'_, MySql>,
+    subscription_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_subscription
+         SET status = 'SUSPENDED',
+             next_run_at = NULL
+         WHERE id = ?",
+    )
+    .bind(subscription_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn restore_subscription_schedule(
+    tx: &mut Transaction<'_, MySql>,
+    subscription_id: i64,
+    next_run_at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_subscription
+         SET next_run_at = ?
+         WHERE id = ?",
+    )
+    .bind(next_run_at.naive_utc())
+    .bind(subscription_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn mark_account_relogin_required(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE game_account
+         SET login_status = 'RELOGIN_REQUIRED'
+         WHERE id = ?",
+    )
+    .bind(game_account_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn mark_account_identity_mismatch(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE game_account
+         SET verify_status = 'MISMATCH'
+         WHERE id = ?",
+    )
+    .bind(game_account_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
