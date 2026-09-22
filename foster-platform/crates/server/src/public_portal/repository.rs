@@ -261,15 +261,29 @@ pub async fn clear_manual_pause(
     pool: &MySqlPool,
     subscription_id: i64,
 ) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
     sqlx::query(
         "UPDATE foster_subscription
          SET manual_pause_until = NULL
          WHERE id = ?",
     )
     .bind(subscription_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = 'PENDING',
+             deferred_until = NULL
+         WHERE subscription_id = ?
+           AND status = 'DEFERRED_MANUAL'",
+    )
+    .bind(subscription_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -306,6 +320,18 @@ pub async fn replace_quiet_periods(
         .execute(&mut *tx)
         .await?;
     }
+
+    sqlx::query(
+        "UPDATE foster_job j
+         JOIN foster_subscription s ON s.id = j.subscription_id
+         SET j.status = 'PENDING',
+             j.deferred_until = NULL
+         WHERE s.game_account_id = ?
+           AND j.status = 'DEFERRED_QUIET'",
+    )
+    .bind(game_account_id)
+    .execute(&mut *tx)
+    .await?;
 
     tx.commit().await?;
     Ok(())
