@@ -12,8 +12,8 @@ use crate::{
 };
 
 use super::service::{
-    CreateResourceCycleRequest, ResourceAdminError, ResourceAdminService, ResourceCycleView,
-    ResourcePoolView, UpsertProviderRequest, ProviderView,
+    CreateResourceCycleRequest, ProviderView, ResourceAdminError, ResourceAdminService,
+    ResourceCycleView, ResourcePoolView, UpsertProviderRequest,
 };
 
 #[derive(Debug, Deserialize)]
