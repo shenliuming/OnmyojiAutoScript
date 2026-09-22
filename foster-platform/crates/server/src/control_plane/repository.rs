@@ -1,4 +1,5 @@
-use foster_protocol::EmulatorDescriptor;
+use foster_domain::EmulatorStatus;
+use foster_protocol::{EmulatorDescriptor, EmulatorHeartbeat};
 use sqlx::{MySql, MySqlPool, Transaction};
 
 #[derive(Debug, sqlx::FromRow)]
@@ -56,15 +57,28 @@ pub async fn touch_host_heartbeat(pool: &MySqlPool, host_id: i64) -> Result<(), 
 }
 
 pub async fn mark_host_offline(pool: &MySqlPool, host_id: i64) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
     sqlx::query(
         "UPDATE host
          SET status = 'OFFLINE'
          WHERE id = ?",
     )
     .bind(host_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    sqlx::query(
+        "UPDATE emulator_instance
+         SET status = 'OFFLINE'
+         WHERE host_id = ?
+           AND status <> 'MAINTENANCE'",
+    )
+    .bind(host_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -197,4 +211,43 @@ pub async fn insert_pending_binding(
     .await?;
 
     Ok(result.last_insert_id() as i64)
+}
+
+
+pub async fn update_emulator_heartbeats(
+    pool: &MySqlPool,
+    host_id: i64,
+    items: &[EmulatorHeartbeat],
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    for item in items {
+        sqlx::query(
+            "UPDATE emulator_instance
+             SET status = ?,
+                 last_heartbeat_at = NOW(3)
+             WHERE host_id = ?
+               AND emulator_code = ?",
+        )
+        .bind(emulator_status_name(item.status))
+        .bind(host_id)
+        .bind(&item.emulator_code)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+fn emulator_status_name(status: EmulatorStatus) -> &'static str {
+    match status {
+        EmulatorStatus::Offline => "OFFLINE",
+        EmulatorStatus::Idle => "IDLE",
+        EmulatorStatus::SwitchingAccount => "SWITCHING_ACCOUNT",
+        EmulatorStatus::Running => "RUNNING",
+        EmulatorStatus::LoginSession => "LOGIN_SESSION",
+        EmulatorStatus::Maintenance => "MAINTENANCE",
+        EmulatorStatus::Error => "ERROR",
+    }
 }
