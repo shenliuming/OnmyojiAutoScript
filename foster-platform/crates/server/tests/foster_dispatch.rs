@@ -526,7 +526,6 @@ async fn stale_attempt_success_is_ignored(pool: MySqlPool) -> anyhow::Result<()>
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
 async fn platform_dispatch_sends_exact_provider_and_confirms_on_success(
     pool: MySqlPool,
@@ -659,12 +658,11 @@ async fn provider_not_found_releases_slot_and_marks_binding_suspect(
         )
         .await?;
 
-    let allocation_status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_resource_allocation WHERE job_id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let allocation_status: String =
+        sqlx::query_scalar("SELECT status FROM foster_resource_allocation WHERE job_id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(allocation_status, "RELEASED");
 
     let occupied: i32 =
@@ -688,7 +686,6 @@ async fn provider_not_found_releases_slot_and_marks_binding_suspect(
 
     Ok(())
 }
-
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn no_slot_quarantines_cycle_and_next_attempt_uses_other_provider(
