@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use foster_domain::{QuietWindow, ScheduleGate, evaluate_quiet_periods};
+use foster_domain::{
+    FosterJobStatus, QuietWindow, ScheduleGate, evaluate_quiet_periods,
+};
 use sqlx::MySqlPool;
 use uuid::Uuid;
 
@@ -10,6 +12,7 @@ use super::repository::{
     list_due_subscription_ids, list_enabled_quiet_periods, lock_active_binding_for_account,
     lock_due_subscription, lock_emulator_for_claim, lock_job_for_claim, lock_job_gate_context,
     resume_job_pending, set_job_deferred, set_job_switching_account, set_job_waiting_emulator,
+    transition_job_status,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -47,6 +50,30 @@ pub struct SchedulerService {
 impl SchedulerService {
     pub fn new(pool: MySqlPool) -> Self {
         Self { pool }
+    }
+
+    pub async fn transition_job(
+        &self,
+        job_id: i64,
+        expected: FosterJobStatus,
+        next: FosterJobStatus,
+        now: DateTime<Utc>,
+    ) -> Result<bool, SchedulerError> {
+        if !is_allowed_transition(expected, next) {
+            return Ok(false);
+        }
+
+        transition_job_status(
+            &self.pool,
+            job_id,
+            foster_job_status_name(expected),
+            foster_job_status_name(next),
+            now,
+            next.is_executing(),
+            next.is_terminal(),
+        )
+        .await
+        .map_err(SchedulerError::Database)
     }
 
     pub async fn gate_pending_job(
@@ -226,5 +253,50 @@ impl SchedulerService {
         }
 
         Ok(created)
+    }
+}
+
+
+fn is_allowed_transition(expected: FosterJobStatus, next: FosterJobStatus) -> bool {
+    matches!(
+        (expected, next),
+        (
+            FosterJobStatus::SwitchingAccount,
+            FosterJobStatus::VerifyingAccount
+        ) | (
+            FosterJobStatus::VerifyingAccount,
+            FosterJobStatus::Running
+        ) | (
+            FosterJobStatus::Running,
+            FosterJobStatus::Success
+        ) | (
+            FosterJobStatus::Running,
+            FosterJobStatus::Retry
+        ) | (
+            FosterJobStatus::Running,
+            FosterJobStatus::Failed
+        ) | (
+            FosterJobStatus::Running,
+            FosterJobStatus::IdentityMismatch
+        )
+    )
+}
+
+fn foster_job_status_name(status: FosterJobStatus) -> &'static str {
+    match status {
+        FosterJobStatus::Pending => "PENDING",
+        FosterJobStatus::DeferredQuiet => "DEFERRED_QUIET",
+        FosterJobStatus::DeferredManual => "DEFERRED_MANUAL",
+        FosterJobStatus::WaitingEmulator => "WAITING_EMULATOR",
+        FosterJobStatus::WaitingResource => "WAITING_RESOURCE",
+        FosterJobStatus::SwitchingAccount => "SWITCHING_ACCOUNT",
+        FosterJobStatus::VerifyingAccount => "VERIFYING_ACCOUNT",
+        FosterJobStatus::Running => "RUNNING",
+        FosterJobStatus::Success => "SUCCESS",
+        FosterJobStatus::Retry => "RETRY",
+        FosterJobStatus::Failed => "FAILED",
+        FosterJobStatus::IdentityMismatch => "IDENTITY_MISMATCH",
+        FosterJobStatus::Cancelled => "CANCELLED",
+        FosterJobStatus::RecoveryRequired => "RECOVERY_REQUIRED",
     }
 }
