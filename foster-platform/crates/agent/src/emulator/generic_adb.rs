@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use foster_domain::EmulatorStatus;
 use foster_protocol::EmulatorDescriptor;
 use serde::Deserialize;
 use tokio::process::Command;
@@ -313,6 +314,29 @@ where
         instance_id: &str,
     ) -> Result<Option<String>, EmulatorDriverError> {
         Ok(Some(self.instance_config(instance_id)?.adb_serial))
+    }
+
+    async fn status(
+        &self,
+        instance_id: &str,
+    ) -> Result<EmulatorStatus, EmulatorDriverError> {
+        let config = self.instance_config(instance_id)?;
+        let args = vec![
+            "-s".to_string(),
+            config.adb_serial,
+            "get-state".to_string(),
+        ];
+
+        match self.runner.run(&self.adb_program, &args).await {
+            Ok(output)
+                if output.success
+                    && String::from_utf8_lossy(&output.stdout).trim() == "device" =>
+            {
+                Ok(EmulatorStatus::Idle)
+            }
+            Ok(_) => Ok(EmulatorStatus::Offline),
+            Err(_) => Ok(EmulatorStatus::Offline),
+        }
     }
 
     async fn screenshot(
