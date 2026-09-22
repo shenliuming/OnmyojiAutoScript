@@ -27,7 +27,6 @@ pub async fn list_due_subscription_ids(
     .bind(now.naive_utc())
     .bind(now.naive_utc())
     .bind(now.naive_utc())
-    .bind(now.naive_utc())
     .bind(i64::from(limit))
     .fetch_all(pool)
     .await
