@@ -111,7 +111,10 @@ impl SchedulerService {
             .await?
             .ok_or(SchedulerError::JobNotFound)?;
 
-        if job.status != "RUNNING" {
+        if !matches!(
+            job.status.as_str(),
+            "SWITCHING_ACCOUNT" | "VERIFYING_ACCOUNT" | "RUNNING"
+        ) {
             tx.rollback().await?;
             return Err(SchedulerError::JobNotRunning);
         }
