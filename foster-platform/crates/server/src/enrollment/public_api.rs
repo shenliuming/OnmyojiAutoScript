@@ -67,7 +67,6 @@ impl PublicLoginRow {
     }
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct ConfirmLoginRequest {
     pub confirmed: bool,
