@@ -40,7 +40,7 @@ pub struct CreatedShareLink {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicQuietPeriod {
-    pub weekday_mask: i32,
+    pub weekday_mask: u8,
     pub start_time: String,
     pub end_time: String,
     pub timezone: String,
@@ -202,7 +202,7 @@ impl PublicPortalService {
                 .map_err(|_| PublicPortalError::InvalidQuietPeriod)?;
 
             rows.push(QuietPeriodRow {
-                weekday_mask: input.weekday_mask,
+                weekday_mask: input.weekday_mask as u8,
                 start_time,
                 end_time,
                 timezone: "Asia/Shanghai".to_string(),
@@ -341,7 +341,7 @@ fn current_quiet_until(now: DateTime<Utc>, rows: &[QuietPeriodRow]) -> Option<Da
     let mut until = None;
     for row in rows {
         let window = QuietWindow {
-            weekday_mask: row.weekday_mask as u8,
+            weekday_mask: row.weekday_mask,
             start_time: row.start_time,
             end_time: row.end_time,
             before_buffer_minutes: i64::from(row.before_buffer_minutes),
