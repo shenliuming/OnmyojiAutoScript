@@ -119,7 +119,6 @@ pub struct FosterFailed {
     pub screenshot_url: Option<String>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AgentEvent {
