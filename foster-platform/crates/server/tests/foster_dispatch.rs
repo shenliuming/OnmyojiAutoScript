@@ -782,7 +782,6 @@ async fn no_slot_quarantines_cycle_and_next_attempt_uses_other_provider(
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
 async fn insufficient_identity_does_not_reserve_platform_slot(
     pool: MySqlPool,
