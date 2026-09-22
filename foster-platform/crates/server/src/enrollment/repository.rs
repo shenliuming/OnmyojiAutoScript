@@ -37,10 +37,7 @@ pub async fn insert_login_session(
     Ok(result.last_insert_id() as i64)
 }
 
-pub async fn release_pending_binding(
-    pool: &MySqlPool,
-    binding_id: i64,
-) -> Result<(), sqlx::Error> {
+pub async fn release_pending_binding(pool: &MySqlPool, binding_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE emulator_account_binding
          SET status = 'UNBOUND',
