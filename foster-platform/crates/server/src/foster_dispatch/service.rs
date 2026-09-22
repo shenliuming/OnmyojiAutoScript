@@ -67,6 +67,15 @@ impl FosterDispatchService {
         job_id: i64,
         registry: &AgentRegistry,
     ) -> Result<DispatchFosterResult, FosterDispatchError> {
+        self.dispatch_job_at(job_id, registry, chrono::Utc::now()).await
+    }
+
+    pub async fn dispatch_job_at(
+        &self,
+        job_id: i64,
+        registry: &AgentRegistry,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<DispatchFosterResult, FosterDispatchError> {
         let target = load_dispatch_target(&self.pool, job_id)
             .await?
             .ok_or(FosterDispatchError::JobNotFound)?;
@@ -86,7 +95,7 @@ impl FosterDispatchService {
                     job_id,
                     FosterErrorCode::IdentityMismatch,
                     "insufficient trusted identity hints for foster dispatch",
-                    chrono::Utc::now(),
+                    now,
                 )
                 .await?;
             return Ok(DispatchFosterResult::RejectedIdentity);
@@ -94,7 +103,7 @@ impl FosterDispatchService {
 
         let resource_reservation = if resource_mode == ResourceMode::Platform {
             match ResourcePoolService::new(self.pool.clone())
-                .reserve_for_job(job_id, chrono::Utc::now())
+                .reserve_for_job(job_id, now)
                 .await?
             {
                 ReserveForJobResult::Reserved(reservation) => Some(reservation),
@@ -146,7 +155,7 @@ impl FosterDispatchService {
                         .release_for_job(
                             job_id,
                             "agent command delivery failed",
-                            chrono::Utc::now(),
+                            now,
                         )
                         .await?;
                 }
@@ -155,7 +164,7 @@ impl FosterDispatchService {
                         job_id,
                         FosterErrorCode::EmulatorOffline,
                         "agent command delivery failed",
-                        chrono::Utc::now(),
+                        now,
                     )
                     .await?;
                 Ok(DispatchFosterResult::WaitingEmulator)
