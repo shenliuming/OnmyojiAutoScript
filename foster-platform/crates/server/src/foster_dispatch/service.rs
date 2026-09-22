@@ -19,7 +19,6 @@ use crate::{
 use super::repository::{
     FosterDispatchTargetRow, FosterIdentityRow, current_job_retry_count, current_job_status,
     job_belongs_to_host, load_dispatch_target, load_identity_rows, set_job_screenshot_url,
-    set_job_waiting_resource,
 };
 
 #[derive(Debug, thiserror::Error)]
