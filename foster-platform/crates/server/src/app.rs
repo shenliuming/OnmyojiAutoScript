@@ -12,6 +12,8 @@ use crate::{
         public_api::{confirm_login, get_public_login},
         sse::login_status_events,
     },
+    foster_dispatch::FosterDispatchService,
+    scheduler::SchedulerService,
 };
 
 #[derive(Clone)]
@@ -23,6 +25,7 @@ pub struct AppState {
 
 pub fn build_app(state: AppState) -> Router {
     spawn_stale_sweeper(state.clone());
+    spawn_foster_scheduler(state.clone());
 
     Router::new()
         .route("/healthz", get(healthz))
@@ -59,6 +62,41 @@ fn spawn_stale_sweeper(state: AppState) {
                 .bind(host_id)
                 .execute(&state.pool)
                 .await;
+            }
+        }
+    });
+}
+
+
+fn spawn_foster_scheduler(state: AppState) {
+    tokio::spawn(async move {
+        let interval = std::env::var("FOSTER_SCHEDULER_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|| std::time::Duration::from_secs(15));
+
+        loop {
+            tokio::time::sleep(interval).await;
+
+            let scheduler = SchedulerService::new(state.pool.clone());
+            let report = match scheduler.run_once(chrono::Utc::now()).await {
+                Ok(report) => report,
+                Err(error) => {
+                    tracing::warn!(error = %error, "foster scheduler tick failed");
+                    continue;
+                }
+            };
+
+            let dispatcher = FosterDispatchService::new(state.pool.clone());
+            for job_id in report.claimed_job_ids {
+                if let Err(error) = dispatcher.dispatch_job(job_id, &state.registry).await {
+                    tracing::warn!(
+                        job_id,
+                        error = %error,
+                        "foster job dispatch failed"
+                    );
+                }
             }
         }
     });
