@@ -247,7 +247,6 @@ pub async fn resume_job_pending(
     Ok(())
 }
 
-
 #[derive(Debug, sqlx::FromRow)]
 pub struct ClaimJobRow {
     pub id: i64,
