@@ -13,9 +13,8 @@ use crate::control_plane::{AllocationError, BindingAllocator};
 use super::{
     model::CreatedLoginSession,
     repository::{
-        NewLoginSession, insert_login_session, mark_login_failed,
-        mark_login_identity_detected, mark_login_preparing, mark_login_qr_expired,
-        mark_login_qr_ready, release_pending_binding,
+        NewLoginSession, insert_login_session, mark_login_failed, mark_login_identity_detected,
+        mark_login_preparing, mark_login_qr_expired, mark_login_qr_ready, release_pending_binding,
     },
 };
 
