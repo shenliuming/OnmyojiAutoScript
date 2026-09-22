@@ -98,13 +98,14 @@ async fn share_tokens_are_hashed_and_public_token_is_read_only(
     .await?;
     assert_eq!(raw_public_count, 0);
 
-    let status = service
-        .load_public_status(&links.public_token, now)
-        .await?;
+    let status = service.load_public_status(&links.public_token, now).await?;
     assert_eq!(status.subscription_no, "SUB-H5");
 
     let control_with_public = service.pause(&links.public_token, "2H", now).await;
-    assert!(matches!(control_with_public, Err(PublicPortalError::NotFound)));
+    assert!(matches!(
+        control_with_public,
+        Err(PublicPortalError::NotFound)
+    ));
 
     Ok(())
 }
@@ -259,11 +260,10 @@ async fn pause_only_extends_until_explicitly_cleared_and_scheduler_defers(
     .await?;
     assert!(stored_pause.is_none());
 
-    let job_status: String =
-        sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
-            .bind(fixture.job_id)
-            .fetch_one(&pool)
-            .await?;
+    let job_status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+        .bind(fixture.job_id)
+        .fetch_one(&pool)
+        .await?;
     assert_eq!(job_status, "PENDING");
 
     Ok(())
@@ -280,10 +280,7 @@ async fn today_pause_ends_at_shanghai_midnight(pool: MySqlPool) -> anyhow::Resul
 
     let until = portal.pause(&links.control_token, "TODAY", now).await?;
 
-    assert_eq!(
-        until,
-        Utc.with_ymd_and_hms(2026, 9, 22, 16, 0, 0).unwrap()
-    );
+    assert_eq!(until, Utc.with_ymd_and_hms(2026, 9, 22, 16, 0, 0).unwrap());
     Ok(())
 }
 
@@ -315,9 +312,7 @@ async fn quiet_periods_replace_atomically_and_feed_scheduler_gate(
 
     assert_eq!(
         scheduler.gate_pending_job(fixture.job_id, now).await?,
-        JobGateResult::DeferredQuiet(
-            Utc.with_ymd_and_hms(2026, 9, 21, 15, 5, 0).unwrap()
-        )
+        JobGateResult::DeferredQuiet(Utc.with_ymd_and_hms(2026, 9, 21, 15, 5, 0).unwrap())
     );
 
     portal
@@ -344,11 +339,10 @@ async fn quiet_periods_replace_atomically_and_feed_scheduler_gate(
     .await?;
     assert_eq!(count, 1);
 
-    let job_status: String =
-        sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
-            .bind(fixture.job_id)
-            .fetch_one(&pool)
-            .await?;
+    let job_status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+        .bind(fixture.job_id)
+        .fetch_one(&pool)
+        .await?;
     assert_eq!(job_status, "PENDING");
 
     Ok(())
@@ -392,10 +386,7 @@ async fn invalid_quiet_period_does_not_replace_existing_configuration(
             now,
         )
         .await;
-    assert!(matches!(
-        result,
-        Err(PublicPortalError::InvalidQuietPeriod)
-    ));
+    assert!(matches!(result, Err(PublicPortalError::InvalidQuietPeriod)));
 
     let row: (i32, chrono::NaiveTime) = sqlx::query_as(
         "SELECT weekday_mask, start_time
@@ -406,10 +397,7 @@ async fn invalid_quiet_period_does_not_replace_existing_configuration(
     .fetch_one(&pool)
     .await?;
     assert_eq!(row.0, 127);
-    assert_eq!(
-        row.1,
-        chrono::NaiveTime::from_hms_opt(20, 0, 0).unwrap()
-    );
+    assert_eq!(row.1, chrono::NaiveTime::from_hms_opt(20, 0, 0).unwrap());
 
     Ok(())
 }
