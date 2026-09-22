@@ -6,7 +6,8 @@ use std::{
 use foster_domain::EmulatorStatus;
 use foster_protocol::{
     AgentEnvelope, AgentEvent, AgentHello, EmulatorHeartbeat, EmulatorSnapshot, Heartbeat,
-    PROTOCOL_VERSION, Pong, ServerCommand, ServerEnvelope, validate_protocol_version,
+    LoginFailed, LoginIdentityDetected, LoginPreparing, LoginQrReady, PROTOCOL_VERSION, Pong,
+    ServerCommand, ServerEnvelope, validate_protocol_version,
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
@@ -15,6 +16,7 @@ use uuid::Uuid;
 use crate::{
     config::AgentConfig,
     emulator::{EmulatorDriver, EmulatorDriverError},
+    login::{LoginExecutor, LoginExecutorError},
     ws::{AgentWebSocket, WsClientError, connect},
 };
 
@@ -28,11 +30,14 @@ pub enum AgentRuntimeError {
     Serialize(#[from] serde_json::Error),
     #[error(transparent)]
     Driver(#[from] EmulatorDriverError),
+    #[error(transparent)]
+    LoginExecutor(#[from] LoginExecutorError),
 }
 
 pub struct AgentRuntime<D: EmulatorDriver> {
     config: AgentConfig,
     driver: Arc<D>,
+    login_executor: Option<Arc<dyn LoginExecutor>>,
 }
 
 impl<D: EmulatorDriver> AgentRuntime<D> {
@@ -40,7 +45,13 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         Self {
             config,
             driver: Arc::new(driver),
+            login_executor: None,
         }
+    }
+
+    pub fn with_login_executor<E: LoginExecutor>(mut self, executor: E) -> Self {
+        self.login_executor = Some(Arc::new(executor));
+        self
     }
 
     pub async fn run(self) -> Result<(), AgentRuntimeError> {
@@ -123,8 +134,76 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             ServerCommand::RefreshEmulators(_) => {
                 self.send_snapshot(socket).await?;
             }
-            ServerCommand::StartLogin(_) | ServerCommand::CancelLogin(_) => {}
+            ServerCommand::StartLogin(command) => {
+                self.handle_start_login(socket, command).await?;
+            }
+            ServerCommand::CancelLogin(command) => {
+                if let Some(executor) = &self.login_executor {
+                    executor.cancel(&command.session_no).await?;
+                }
+            }
         }
+
+        Ok(())
+    }
+
+    async fn handle_start_login(
+        &self,
+        socket: &mut AgentWebSocket,
+        command: foster_protocol::StartLoginCommand,
+    ) -> Result<(), AgentRuntimeError> {
+        let Some(executor) = &self.login_executor else {
+            return Ok(());
+        };
+
+        self.send_event(
+            socket,
+            AgentEvent::LoginPreparing(LoginPreparing {
+                session_no: command.session_no.clone(),
+            }),
+        )
+        .await?;
+
+        let execution = match executor.execute(&command).await {
+            Ok(execution) => execution,
+            Err(error) => {
+                self.send_event(
+                    socket,
+                    AgentEvent::LoginFailed(LoginFailed {
+                        session_no: command.session_no,
+                        code: "LOGIN_EXECUTOR_FAILED".to_string(),
+                        message: error.to_string(),
+                    }),
+                )
+                .await?;
+                return Ok(());
+            }
+        };
+
+        let qr_ttl = chrono::Duration::from_std(execution.qr_ttl)
+            .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
+
+        self.send_event(
+            socket,
+            AgentEvent::LoginQrReady(LoginQrReady {
+                session_no: command.session_no.clone(),
+                qr_payload: execution.qr_payload,
+                expires_at: chrono::Utc::now() + qr_ttl,
+            }),
+        )
+        .await?;
+
+        self.send_event(
+            socket,
+            AgentEvent::LoginIdentityDetected(LoginIdentityDetected {
+                session_no: command.session_no,
+                masked_account: execution.masked_account,
+                character_name: execution.character_name,
+                server_name: execution.server_name,
+                game_uid: execution.game_uid,
+            }),
+        )
+        .await?;
 
         Ok(())
     }
