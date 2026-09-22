@@ -143,3 +143,38 @@ fn duplicate_emulator_code_is_rejected() {
 
     assert!(result.is_err());
 }
+
+
+#[tokio::test]
+async fn adb_state_controls_emulator_health() -> anyhow::Result<()> {
+    use foster_domain::EmulatorStatus;
+
+    let runner = FakeRunner::with_outputs(vec![
+        CommandOutput {
+            success: true,
+            stdout: b"device\n".to_vec(),
+            stderr: Vec::new(),
+        },
+        CommandOutput {
+            success: false,
+            stdout: Vec::new(),
+            stderr: b"offline".to_vec(),
+        },
+    ]);
+    let driver = GenericAdbEmulatorDriver::from_json_with_runner(
+        config_json(),
+        "adb".into(),
+        runner,
+    )?;
+
+    assert_eq!(
+        driver.status("emu-01").await?,
+        EmulatorStatus::Idle
+    );
+    assert_eq!(
+        driver.status("emu-01").await?,
+        EmulatorStatus::Offline
+    );
+
+    Ok(())
+}
