@@ -4,15 +4,13 @@ use async_trait::async_trait;
 use foster_agent::{
     config::AgentConfig,
     emulator::FakeEmulatorDriver,
-    foster::{
-        FosterExecution, FosterExecutor, FosterExecutorError,
-    },
+    foster::{FosterExecution, FosterExecutor, FosterExecutorError},
     runtime::AgentRuntime,
 };
 use foster_domain::ResourceMode;
 use foster_protocol::{
-    AgentEnvelope, AgentEvent, ExecuteFosterCommand, FosterDetectedIdentity,
-    FosterTargetIdentity, PROTOCOL_VERSION, ServerCommand, ServerEnvelope,
+    AgentEnvelope, AgentEvent, ExecuteFosterCommand, FosterDetectedIdentity, FosterTargetIdentity,
+    PROTOCOL_VERSION, ServerCommand, ServerEnvelope,
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
@@ -153,7 +151,10 @@ async fn heartbeat_continues_while_foster_executes() -> anyhow::Result<()> {
         }
     }
 
-    assert!(saw_heartbeat, "heartbeat stopped while foster executor was running");
+    assert!(
+        saw_heartbeat,
+        "heartbeat stopped while foster executor was running"
+    );
     assert!(saw_success, "foster success event was not emitted");
 
     task.abort();
