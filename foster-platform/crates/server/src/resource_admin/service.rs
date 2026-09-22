@@ -328,10 +328,11 @@ fn cycle_view(row: ResourceCycleRow) -> ResourceCycleView {
 }
 
 fn map_provider_db_error(error: sqlx::Error) -> ResourceAdminError {
-    if let sqlx::Error::Database(database) = &error {
-        if database.is_unique_violation() && database.message().contains("uk_provider_alias") {
-            return ResourceAdminError::ProviderAliasConflict;
-        }
+    if let sqlx::Error::Database(database) = &error
+        && database.is_unique_violation()
+        && database.message().contains("uk_provider_alias")
+    {
+        return ResourceAdminError::ProviderAliasConflict;
     }
 
     ResourceAdminError::Database(error)
