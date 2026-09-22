@@ -18,10 +18,12 @@ use super::{
     model::CreatedLoginSession,
     repository::{
         NewLoginSession, TrustedIdentityRow, activate_game_account, activate_pending_binding,
-        complete_login_session, insert_enrollment_identity, insert_login_session,
-        load_trusted_identities, lock_binding, lock_game_account,
-        lock_login_session_by_control_hash, mark_login_failed, mark_login_identity_detected,
-        mark_login_preparing, mark_login_qr_expired, mark_login_qr_ready, release_pending_binding,
+        cancel_login_session_row, complete_login_session, find_expired_login_session_ids,
+        insert_enrollment_identity, insert_login_session, load_trusted_identities, lock_binding,
+        lock_game_account, lock_login_session_by_control_hash, lock_login_session_by_id,
+        mark_login_failed, mark_login_identity_detected, mark_login_preparing,
+        mark_login_qr_expired, mark_login_qr_ready, release_pending_binding,
+        release_pending_binding_tx,
     },
 };
 
@@ -106,6 +108,63 @@ impl EnrollmentService {
         }
 
         Ok(())
+    }
+
+    pub async fn expire_login_sessions(&self) -> Result<usize, EnrollmentError> {
+        let session_ids = find_expired_login_session_ids(&self.pool).await?;
+        let mut expired = 0_usize;
+
+        for session_id in session_ids {
+            let mut tx = self.pool.begin().await?;
+            let Some(session) = lock_login_session_by_id(&mut tx, session_id).await? else {
+                tx.rollback().await?;
+                continue;
+            };
+
+            if matches!(session.status.as_str(), "SUCCESS" | "FAILED" | "CANCELLED")
+                || session.expires_at > Utc::now().naive_utc()
+            {
+                tx.commit().await?;
+                continue;
+            }
+
+            if cancel_login_session_row(&mut tx, session.id, "SESSION_EXPIRED").await? {
+                release_pending_binding_tx(&mut tx, session.binding_id).await?;
+                expired += 1;
+            }
+
+            tx.commit().await?;
+        }
+
+        Ok(expired)
+    }
+
+    pub async fn cancel_login_session(
+        &self,
+        control_token: &str,
+    ) -> Result<String, EnrollmentError> {
+        let control_token_hash = sha256_hex(control_token);
+        let mut tx = self.pool.begin().await?;
+
+        let session = lock_login_session_by_control_hash(&mut tx, &control_token_hash)
+            .await?
+            .ok_or(EnrollmentError::LoginSessionNotFound)?;
+
+        if session.status == "CANCELLED" {
+            tx.commit().await?;
+            return Ok(session.session_no);
+        }
+
+        if matches!(session.status.as_str(), "SUCCESS" | "FAILED") {
+            return Err(EnrollmentError::InvalidLoginState);
+        }
+
+        if cancel_login_session_row(&mut tx, session.id, "USER_CANCELLED").await? {
+            release_pending_binding_tx(&mut tx, session.binding_id).await?;
+        }
+
+        tx.commit().await?;
+        Ok(session.session_no)
     }
 
     pub async fn confirm_login_session(
