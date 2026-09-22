@@ -195,16 +195,15 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             let execution = match executor.execute(&command).await {
                 Ok(execution) => execution,
                 Err(error) => {
-                    let _ = event_tx.send(AgentEvent::FosterFailed(
-                        foster_protocol::FosterFailed {
+                    let _ =
+                        event_tx.send(AgentEvent::FosterFailed(foster_protocol::FosterFailed {
                             job_id,
                             attempt,
                             failed_at: chrono::Utc::now(),
                             error_code: foster_domain::FosterErrorCode::NetworkError,
                             message: format!("foster executor failed: {error}"),
                             screenshot_url: None,
-                        },
-                    ));
+                        }));
                     return;
                 }
             };
