@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use chrono::{TimeZone, Utc};
-use foster_domain::{FosterErrorCode, ResourceMode};
+use foster_domain::{FosterErrorCode, ResourceMode, ResourceType};
 use foster_protocol::{
     AgentEvent, FosterDetectedIdentity, FosterFailed, FosterStage, FosterStageChanged,
     FosterSucceeded, ServerCommand,
@@ -87,14 +87,17 @@ async fn seed_fixture(pool: &MySqlPool, resource_mode: &str) -> anyhow::Result<F
         .await?;
     }
 
+    let resource_type = (resource_mode == "PLATFORM").then_some("FISH");
+
     let plan_id = sqlx::query(
         "INSERT INTO foster_plan(
             plan_code, plan_name, daily_target_runs,
-            interval_minutes, resource_mode, status
+            interval_minutes, resource_mode, resource_type, status
          )
-         VALUES ('PLAN-DISPATCH', 'Plan Dispatch', 4, 360, ?, 'ACTIVE')",
+         VALUES ('PLAN-DISPATCH', 'Plan Dispatch', 4, 360, ?, ?, 'ACTIVE')",
     )
     .bind(resource_mode)
+    .bind(resource_type)
     .execute(pool)
     .await?
     .last_insert_id() as i64;
@@ -103,15 +106,16 @@ async fn seed_fixture(pool: &MySqlPool, resource_mode: &str) -> anyhow::Result<F
     let subscription_id = sqlx::query(
         "INSERT INTO foster_subscription(
             subscription_no, game_account_id, plan_id,
-            resource_mode, daily_target_runs, interval_minutes,
+            resource_mode, resource_type, daily_target_runs, interval_minutes,
             status, start_at, end_at, next_run_at
          )
-         VALUES ('SUB-DISPATCH', ?, ?, ?, 4, 360,
+         VALUES ('SUB-DISPATCH', ?, ?, ?, ?, 4, 360,
                  'ACTIVE', ?, ?, NULL)",
     )
     .bind(account_id)
     .bind(plan_id)
     .bind(resource_mode)
+    .bind(resource_type)
     .bind((base - chrono::Duration::days(1)).naive_utc())
     .bind((base + chrono::Duration::days(30)).naive_utc())
     .execute(pool)
@@ -141,6 +145,52 @@ async fn seed_fixture(pool: &MySqlPool, resource_mode: &str) -> anyhow::Result<F
         subscription_id,
         job_id,
     })
+}
+
+async fn seed_platform_resource(
+    pool: &MySqlPool,
+    account_id: i64,
+    base: chrono::DateTime<Utc>,
+    alias: &str,
+) -> anyhow::Result<(i64, i64)> {
+    let provider_id = sqlx::query(
+        "INSERT INTO provider_account(
+            provider_code, nickname, provider_alias, server_name, status
+         )
+         VALUES ('PROVIDER-DISPATCH', '资源号', ?, '春之樱', 'ACTIVE')",
+    )
+    .bind(alias)
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    sqlx::query(
+        "INSERT INTO foster_friend_binding(
+            game_account_id, provider_account_id, status, verified_at
+         )
+         VALUES (?, ?, 'VERIFIED', ?)",
+    )
+    .bind(account_id)
+    .bind(provider_id)
+    .bind(base.naive_utc())
+    .execute(pool)
+    .await?;
+
+    let cycle_id = sqlx::query(
+        "INSERT INTO foster_resource_cycle(
+            provider_account_id, resource_type, resource_level,
+            start_at, end_at, slot_capacity, occupied_slots, status
+         )
+         VALUES (?, 'FISH', 6, ?, ?, 1, 0, 'AVAILABLE')",
+    )
+    .bind(provider_id)
+    .bind((base - chrono::Duration::hours(1)).naive_utc())
+    .bind((base + chrono::Duration::hours(8)).naive_utc())
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    Ok((provider_id, cycle_id))
 }
 
 fn online_registry(
@@ -410,7 +460,7 @@ async fn duplicate_terminal_success_event_is_ignored(pool: MySqlPool) -> anyhow:
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn platform_job_waits_for_resource_phase(pool: MySqlPool) -> anyhow::Result<()> {
+async fn platform_job_waits_when_no_resource_is_available(pool: MySqlPool) -> anyhow::Result<()> {
     let fixture = seed_fixture(&pool, "PLATFORM").await?;
     let service = FosterDispatchService::new(pool.clone());
 
@@ -418,7 +468,7 @@ async fn platform_job_waits_for_resource_phase(pool: MySqlPool) -> anyhow::Resul
         .dispatch_job(fixture.job_id, &AgentRegistry::default())
         .await?;
 
-    assert_eq!(result, DispatchFosterResult::UnsupportedPlatform);
+    assert_eq!(result, DispatchFosterResult::WaitingResource);
 
     let row: (String, Option<String>) =
         sqlx::query_as("SELECT status, error_code FROM foster_job WHERE id = ?")
@@ -472,5 +522,168 @@ async fn stale_attempt_success_is_ignored(pool: MySqlPool) -> anyhow::Result<()>
         .await?;
 
     assert_eq!(status, "SWITCHING_ACCOUNT");
+    Ok(())
+}
+
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn platform_dispatch_sends_exact_provider_and_confirms_on_success(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_fixture(&pool, "PLATFORM").await?;
+    let base = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
+    let (_provider_id, cycle_id) =
+        seed_platform_resource(&pool, fixture.account_id, base, "资源A01").await?;
+
+    let service = FosterDispatchService::new(pool.clone());
+    let (registry, mut receiver) = online_registry(fixture.host_id);
+
+    let delivery = tokio::spawn(async move {
+        let outbound = receiver.recv().await.expect("command");
+        let command = outbound.envelope.payload.clone();
+        let _ = outbound.delivered.send(Ok(()));
+        command
+    });
+
+    let result = service.dispatch_job(fixture.job_id, &registry).await?;
+    assert_eq!(result, DispatchFosterResult::Dispatched);
+
+    let command = delivery.await?;
+    let ServerCommand::ExecuteFoster(command) = command else {
+        panic!("expected ExecuteFoster");
+    };
+    assert_eq!(command.resource_mode, ResourceMode::Platform);
+    assert_eq!(command.resource_type, Some(ResourceType::Fish));
+    assert_eq!(command.provider_alias.as_deref(), Some("资源A01"));
+
+    let occupied: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(occupied, 1);
+
+    let completed_at = base + chrono::Duration::minutes(2);
+    service
+        .process_agent_event(
+            fixture.host_id,
+            &AgentEvent::FosterStageChanged(FosterStageChanged {
+                job_id: fixture.job_id,
+                attempt: 0,
+                stage: FosterStage::VerifyingAccount,
+                occurred_at: completed_at - chrono::Duration::seconds(2),
+            }),
+        )
+        .await?;
+    service
+        .process_agent_event(
+            fixture.host_id,
+            &AgentEvent::FosterStageChanged(FosterStageChanged {
+                job_id: fixture.job_id,
+                attempt: 0,
+                stage: FosterStage::Running,
+                occurred_at: completed_at - chrono::Duration::seconds(1),
+            }),
+        )
+        .await?;
+    service
+        .process_agent_event(
+            fixture.host_id,
+            &AgentEvent::FosterSucceeded(FosterSucceeded {
+                job_id: fixture.job_id,
+                attempt: 0,
+                completed_at,
+                remaining_seconds: Some(1_800),
+                screenshot_url: None,
+                detected_identity: FosterDetectedIdentity {
+                    masked_account: Some("12****34".into()),
+                    character_name: Some("角色A".into()),
+                    server_name: Some("春之樱".into()),
+                    game_uid: Some("uid-1".into()),
+                },
+            }),
+        )
+        .await?;
+
+    let allocation: (String, Option<chrono::NaiveDateTime>) = sqlx::query_as(
+        "SELECT status, occupied_until
+         FROM foster_resource_allocation
+         WHERE job_id = ?",
+    )
+    .bind(fixture.job_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(allocation.0, "CONFIRMED");
+    assert_eq!(
+        allocation.1,
+        Some((completed_at + chrono::Duration::seconds(1_800)).naive_utc())
+    );
+
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn provider_not_found_releases_slot_and_marks_binding_suspect(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_fixture(&pool, "PLATFORM").await?;
+    let base = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
+    let (provider_id, cycle_id) =
+        seed_platform_resource(&pool, fixture.account_id, base, "资源A02").await?;
+
+    let service = FosterDispatchService::new(pool.clone());
+    let (registry, mut receiver) = online_registry(fixture.host_id);
+    let delivery = tokio::spawn(async move {
+        let outbound = receiver.recv().await.expect("command");
+        let _ = outbound.delivered.send(Ok(()));
+    });
+
+    assert_eq!(
+        service.dispatch_job(fixture.job_id, &registry).await?,
+        DispatchFosterResult::Dispatched
+    );
+    delivery.await?;
+
+    service
+        .process_agent_event(
+            fixture.host_id,
+            &AgentEvent::FosterFailed(FosterFailed {
+                job_id: fixture.job_id,
+                attempt: 0,
+                failed_at: base + chrono::Duration::minutes(1),
+                error_code: FosterErrorCode::ProviderNotFound,
+                message: "provider alias not found".into(),
+                screenshot_url: None,
+            }),
+        )
+        .await?;
+
+    let allocation_status: String = sqlx::query_scalar(
+        "SELECT status FROM foster_resource_allocation WHERE job_id = ?",
+    )
+    .bind(fixture.job_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(allocation_status, "RELEASED");
+
+    let occupied: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(occupied, 0);
+
+    let binding: (String, Option<String>) = sqlx::query_as(
+        "SELECT status, last_failure_code
+         FROM foster_friend_binding
+         WHERE game_account_id = ? AND provider_account_id = ?",
+    )
+    .bind(fixture.account_id)
+    .bind(provider_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(binding.0, "SUSPECT");
+    assert_eq!(binding.1.as_deref(), Some("PROVIDER_NOT_FOUND"));
+
     Ok(())
 }
