@@ -5,6 +5,6 @@ mod generic_adb;
 pub use driver::{EmulatorDriver, EmulatorDriverError};
 pub use fake::FakeEmulatorDriver;
 pub use generic_adb::{
-    CommandOutput, CommandRunner, EmulatorInstanceConfig,
-    GenericAdbEmulatorDriver, SystemCommandRunner,
+    CommandOutput, CommandRunner, EmulatorInstanceConfig, GenericAdbEmulatorDriver,
+    SystemCommandRunner,
 };
