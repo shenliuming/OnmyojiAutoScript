@@ -438,7 +438,6 @@ pub async fn transition_job_status(
     Ok(result.rows_affected() == 1)
 }
 
-
 #[derive(Debug, sqlx::FromRow)]
 pub struct SuccessJobRow {
     pub id: i64,
