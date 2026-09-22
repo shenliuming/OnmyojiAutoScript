@@ -6,7 +6,7 @@ use super::repository::{
     AllocationRow, attach_allocation_to_job, confirm_allocation, finish_allocation,
     insert_reserved_allocation, list_expirable_job_ids, list_resource_candidates,
     load_live_allocation, lock_releasable_allocation, lock_resource_job,
-    mark_expired_cycles, mark_friend_binding_suspect, release_cycle_slot,
+    mark_cycle_full, mark_expired_cycles, mark_friend_binding_suspect, release_cycle_slot,
     set_job_waiting_resource, try_reserve_cycle,
 };
 
@@ -45,6 +45,7 @@ pub enum ReserveForJobResult {
 pub struct ReleasedAllocation {
     pub allocation_id: i64,
     pub provider_account_id: i64,
+    pub resource_cycle_id: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -249,7 +250,18 @@ impl ResourcePoolService {
         Ok(Some(ReleasedAllocation {
             allocation_id: allocation.id,
             provider_account_id: allocation.provider_account_id,
+            resource_cycle_id: allocation.resource_cycle_id,
         }))
+    }
+
+    pub async fn mark_no_slot(
+        &self,
+        resource_cycle_id: i64,
+    ) -> Result<(), ResourcePoolError> {
+        let mut tx = self.pool.begin().await?;
+        mark_cycle_full(&mut tx, resource_cycle_id).await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     pub async fn mark_provider_not_found(
