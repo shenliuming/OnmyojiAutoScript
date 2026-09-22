@@ -409,3 +409,70 @@ async fn duplicate_terminal_success_event_is_ignored(pool: MySqlPool) -> anyhow:
 
     Ok(())
 }
+
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn platform_job_waits_for_resource_phase(pool: MySqlPool) -> anyhow::Result<()> {
+    let fixture = seed_fixture(&pool, "PLATFORM").await?;
+    let service = FosterDispatchService::new(pool.clone());
+
+    let result = service
+        .dispatch_job(fixture.job_id, &AgentRegistry::default())
+        .await?;
+
+    assert_eq!(result, DispatchFosterResult::UnsupportedPlatform);
+
+    let row: (String, Option<String>) =
+        sqlx::query_as("SELECT status, error_code FROM foster_job WHERE id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
+
+    assert_eq!(row.0, "WAITING_RESOURCE");
+    assert_eq!(row.1.as_deref(), Some("PROVIDER_NOT_FOUND"));
+
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn stale_attempt_success_is_ignored(pool: MySqlPool) -> anyhow::Result<()> {
+    let fixture = seed_fixture(&pool, "USER_FRIEND").await?;
+    let service = FosterDispatchService::new(pool.clone());
+    let at = Utc.with_ymd_and_hms(2026, 9, 22, 12, 5, 0).unwrap();
+
+    sqlx::query(
+        "UPDATE foster_job
+         SET retry_count = 1
+         WHERE id = ?",
+    )
+    .bind(fixture.job_id)
+    .execute(&pool)
+    .await?;
+
+    service
+        .process_agent_event(
+            fixture.host_id,
+            &AgentEvent::FosterSucceeded(FosterSucceeded {
+                job_id: fixture.job_id,
+                attempt: 0,
+                completed_at: at,
+                remaining_seconds: Some(1_800),
+                screenshot_url: None,
+                detected_identity: FosterDetectedIdentity {
+                    masked_account: Some("12****34".into()),
+                    character_name: Some("角色A".into()),
+                    server_name: Some("春之樱".into()),
+                    game_uid: Some("uid-1".into()),
+                },
+            }),
+        )
+        .await?;
+
+    let status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+        .bind(fixture.job_id)
+        .fetch_one(&pool)
+        .await?;
+
+    assert_eq!(status, "SWITCHING_ACCOUNT");
+    Ok(())
+}
