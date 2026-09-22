@@ -283,15 +283,13 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 }
             };
 
-            let _ = event_tx.send(AgentEvent::LoginIdentityDetected(
-                LoginIdentityDetected {
-                    session_no: command.session_no,
-                    masked_account: identity.masked_account,
-                    character_name: identity.character_name,
-                    server_name: identity.server_name,
-                    game_uid: identity.game_uid,
-                },
-            ));
+            let _ = event_tx.send(AgentEvent::LoginIdentityDetected(LoginIdentityDetected {
+                session_no: command.session_no,
+                masked_account: identity.masked_account,
+                character_name: identity.character_name,
+                server_name: identity.server_name,
+                game_uid: identity.game_uid,
+            }));
         });
     }
 
