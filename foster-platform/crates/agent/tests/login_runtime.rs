@@ -190,7 +190,6 @@ async fn cancel_login_invokes_executor_without_emitting_stale_login_events() -> 
     Ok(())
 }
 
-
 #[tokio::test]
 async fn heartbeat_continues_while_waiting_for_login_identity() -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -227,15 +226,11 @@ async fn heartbeat_continues_while_waiting_for_login_identity() -> anyhow::Resul
     for _ in 0..12 {
         let event = read_agent_event(&mut socket).await?;
         match event.payload {
-            AgentEvent::LoginQrReady(value)
-                if value.session_no == "LOGIN-SLOW" =>
-            {
+            AgentEvent::LoginQrReady(value) if value.session_no == "LOGIN-SLOW" => {
                 saw_qr = true;
             }
             AgentEvent::Heartbeat(_) => saw_heartbeat = true,
-            AgentEvent::LoginIdentityDetected(value)
-                if value.session_no == "LOGIN-SLOW" =>
-            {
+            AgentEvent::LoginIdentityDetected(value) if value.session_no == "LOGIN-SLOW" => {
                 saw_identity = true;
                 break;
             }
