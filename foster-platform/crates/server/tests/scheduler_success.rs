@@ -134,17 +134,15 @@ async fn success_falls_back_to_configured_interval(pool: MySqlPool) -> anyhow::R
     assert!(row.1.is_some());
     assert!(row.2.is_none());
 
-    let subscription: (
-        Option<chrono::NaiveDateTime>,
-        Option<chrono::NaiveDateTime>,
-    ) = sqlx::query_as(
-        "SELECT last_success_at, next_run_at
+    let subscription: (Option<chrono::NaiveDateTime>, Option<chrono::NaiveDateTime>) =
+        sqlx::query_as(
+            "SELECT last_success_at, next_run_at
          FROM foster_subscription
          WHERE id = ?",
-    )
-    .bind(fixture.subscription_id)
-    .fetch_one(&pool)
-    .await?;
+        )
+        .bind(fixture.subscription_id)
+        .fetch_one(&pool)
+        .await?;
 
     assert_eq!(subscription.0, Some(success_at.naive_utc()));
     assert_eq!(
