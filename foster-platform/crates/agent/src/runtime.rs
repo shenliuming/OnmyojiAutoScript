@@ -123,6 +123,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             ServerCommand::RefreshEmulators(_) => {
                 self.send_snapshot(socket).await?;
             }
+            ServerCommand::StartLogin(_) | ServerCommand::CancelLogin(_) => {}
         }
 
         Ok(())

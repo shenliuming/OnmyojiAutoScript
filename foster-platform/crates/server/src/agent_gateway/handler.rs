@@ -147,6 +147,11 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             }
                             AgentEvent::Hello(_) => break,
                             AgentEvent::Pong(_) => {}
+                            AgentEvent::LoginPreparing(_)
+                            | AgentEvent::LoginQrReady(_)
+                            | AgentEvent::LoginQrExpired(_)
+                            | AgentEvent::LoginIdentityDetected(_)
+                            | AgentEvent::LoginFailed(_) => {}
                         }
                     }
                     Message::Close(_) => break,
