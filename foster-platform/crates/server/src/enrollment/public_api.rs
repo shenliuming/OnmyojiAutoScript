@@ -42,7 +42,9 @@ impl PublicLoginRow {
     pub(crate) fn to_public_status(&self) -> PublicLoginStatus {
         let now = Utc::now().naive_utc();
         let qr_is_current = matches!(self.status.as_str(), "QR_READY" | "WAITING_SCAN")
-            && self.qr_expires_at.is_some_and(|expires_at| expires_at > now);
+            && self
+                .qr_expires_at
+                .is_some_and(|expires_at| expires_at > now);
 
         PublicLoginStatus {
             session_no: self.session_no.clone(),
