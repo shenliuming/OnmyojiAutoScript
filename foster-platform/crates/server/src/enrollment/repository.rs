@@ -403,7 +403,6 @@ pub async fn complete_login_session(
     Ok(result.rows_affected() == 1)
 }
 
-
 pub async fn find_expired_login_session_ids(pool: &MySqlPool) -> Result<Vec<i64>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT id
