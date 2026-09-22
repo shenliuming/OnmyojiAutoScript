@@ -361,7 +361,6 @@ async fn emulator_contention_leaves_second_job_waiting(pool: MySqlPool) -> anyho
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
 async fn waiting_resource_job_can_be_claimed_again(pool: MySqlPool) -> anyhow::Result<()> {
     let (_, emulator_id) = seed_host_emulator(&pool).await?;
