@@ -9,7 +9,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use foster_protocol::{AgentEnvelope, AgentEvent, validate_protocol_version};
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
@@ -19,6 +20,7 @@ use crate::{
         host_exists, mark_host_offline, mark_host_online, touch_host_heartbeat,
         upsert_emulator_snapshot,
     },
+    enrollment::EnrollmentService,
 };
 
 pub async fn ws_handler(
@@ -60,14 +62,18 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 
     let connection_id = Uuid::new_v4();
     let now = Instant::now();
+    let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel();
 
-    state.registry.register(AgentPresence {
-        connection_id,
-        agent_id: hello.agent_id,
-        host_id: hello.host_id,
-        connected_at: now,
-        last_heartbeat_at: now,
-    });
+    state.registry.register_with_sender(
+        AgentPresence {
+            connection_id,
+            agent_id: hello.agent_id,
+            host_id: hello.host_id,
+            connected_at: now,
+            last_heartbeat_at: now,
+        },
+        outbound_tx,
+    );
 
     if mark_host_online(&state.pool, hello.host_id, &hello.agent_version)
         .await
@@ -79,6 +85,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         return;
     }
 
+    let (mut socket_sink, mut socket_stream) = socket.split();
     let mut deadline = tokio::time::Instant::now() + state.gateway_config.heartbeat_timeout;
 
     loop {
@@ -86,7 +93,26 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             _ = tokio::time::sleep_until(deadline) => {
                 break;
             }
-            next = socket.next() => {
+            outbound = outbound_rx.recv() => {
+                let Some(outbound) = outbound else {
+                    break;
+                };
+
+                let delivery = match serde_json::to_string(&outbound.envelope) {
+                    Ok(json) => socket_sink
+                        .send(Message::Text(json.into()))
+                        .await
+                        .map_err(|error| error.to_string()),
+                    Err(error) => Err(error.to_string()),
+                };
+                let failed = delivery.is_err();
+                let _ = outbound.delivered.send(delivery);
+
+                if failed {
+                    break;
+                }
+            }
+            next = socket_stream.next() => {
                 let Some(message) = next else {
                     break;
                 };
@@ -145,13 +171,23 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                     break;
                                 }
                             }
+                            event @ (
+                                AgentEvent::LoginPreparing(_)
+                                | AgentEvent::LoginQrReady(_)
+                                | AgentEvent::LoginQrExpired(_)
+                                | AgentEvent::LoginIdentityDetected(_)
+                                | AgentEvent::LoginFailed(_)
+                            ) => {
+                                if EnrollmentService::new(state.pool.clone())
+                                    .process_agent_event(hello.host_id, &event)
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
                             AgentEvent::Hello(_) => break,
                             AgentEvent::Pong(_) => {}
-                            AgentEvent::LoginPreparing(_)
-                            | AgentEvent::LoginQrReady(_)
-                            | AgentEvent::LoginQrExpired(_)
-                            | AgentEvent::LoginIdentityDetected(_)
-                            | AgentEvent::LoginFailed(_) => {}
                         }
                     }
                     Message::Close(_) => break,
