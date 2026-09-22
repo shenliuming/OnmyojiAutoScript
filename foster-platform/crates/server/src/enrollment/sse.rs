@@ -14,9 +14,7 @@ use tokio::time::{Instant, Interval};
 
 use crate::app::AppState;
 
-use super::public_api::{
-    PublicLoginStatus, load_by_id, load_by_public_token,
-};
+use super::public_api::{PublicLoginStatus, load_by_id, load_by_public_token};
 
 struct PollState {
     pool: MySqlPool,
