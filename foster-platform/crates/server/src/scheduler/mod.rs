@@ -1,4 +1,4 @@
 mod repository;
 mod service;
 
-pub use service::{SchedulerError, SchedulerService};
+pub use service::{JobGateResult, SchedulerError, SchedulerService};
