@@ -58,9 +58,7 @@ impl CommandRunner for SystemCommandRunner {
             .output()
             .await
             .map_err(|error| {
-                EmulatorDriverError::Message(format!(
-                    "failed to execute {program}: {error}"
-                ))
+                EmulatorDriverError::Message(format!("failed to execute {program}: {error}"))
             })?;
 
         Ok(CommandOutput {
@@ -82,10 +80,7 @@ where
 }
 
 impl GenericAdbEmulatorDriver<SystemCommandRunner> {
-    pub fn from_json(
-        json: &str,
-        adb_program: String,
-    ) -> Result<Self, EmulatorDriverError> {
+    pub fn from_json(json: &str, adb_program: String) -> Result<Self, EmulatorDriverError> {
         Self::from_json_with_runner(json, adb_program, SystemCommandRunner)
     }
 }
@@ -99,12 +94,9 @@ where
         adb_program: String,
         runner: R,
     ) -> Result<Self, EmulatorDriverError> {
-        let configs: Vec<EmulatorInstanceConfig> =
-            serde_json::from_str(json).map_err(|error| {
-                EmulatorDriverError::Message(format!(
-                    "invalid FOSTER_EMULATORS_JSON: {error}"
-                ))
-            })?;
+        let configs: Vec<EmulatorInstanceConfig> = serde_json::from_str(json).map_err(|error| {
+            EmulatorDriverError::Message(format!("invalid FOSTER_EMULATORS_JSON: {error}"))
+        })?;
 
         if configs.is_empty() {
             return Err(EmulatorDriverError::Message(
@@ -143,9 +135,7 @@ where
     pub fn oas_config_map(&self) -> HashMap<String, String> {
         self.instances
             .iter()
-            .map(|(code, config)| {
-                (code.clone(), config.oas_config_name.clone())
-            })
+            .map(|(code, config)| (code.clone(), config.oas_config_name.clone()))
             .collect()
     }
 
@@ -156,9 +146,7 @@ where
         self.instances
             .get(emulator_code)
             .cloned()
-            .ok_or_else(|| {
-                EmulatorDriverError::UnknownInstance(emulator_code.to_string())
-            })
+            .ok_or_else(|| EmulatorDriverError::UnknownInstance(emulator_code.to_string()))
     }
 
     pub async fn prepare_login_screen(
@@ -180,18 +168,13 @@ where
             }
         }
 
-        let delay = Duration::from_millis(
-            config.login_prepare_delay_ms.unwrap_or(3_000),
-        );
+        let delay = Duration::from_millis(config.login_prepare_delay_ms.unwrap_or(3_000));
         tokio::time::sleep(delay).await;
 
         self.screenshot(emulator_code).await
     }
 
-    pub async fn launch_game(
-        &self,
-        emulator_code: &str,
-    ) -> Result<(), EmulatorDriverError> {
+    pub async fn launch_game(&self, emulator_code: &str) -> Result<(), EmulatorDriverError> {
         let config = self.instance_config(emulator_code)?;
         let Some(package_name) = config.package_name else {
             return Ok(());
@@ -220,10 +203,7 @@ where
         Ok(())
     }
 
-    async fn wait_for_adb(
-        &self,
-        serial: &str,
-    ) -> Result<(), EmulatorDriverError> {
+    async fn wait_for_adb(&self, serial: &str) -> Result<(), EmulatorDriverError> {
         for _ in 0..20 {
             let args = vec![
                 "-s".to_string(),
@@ -231,9 +211,7 @@ where
                 "get-state".to_string(),
             ];
             let output = self.runner.run(&self.adb_program, &args).await?;
-            if output.success
-                && String::from_utf8_lossy(&output.stdout).trim() == "device"
-            {
+            if output.success && String::from_utf8_lossy(&output.stdout).trim() == "device" {
                 return Ok(());
             }
 
@@ -251,9 +229,7 @@ impl<R> EmulatorDriver for GenericAdbEmulatorDriver<R>
 where
     R: CommandRunner,
 {
-    async fn list_instances(
-        &self,
-    ) -> Result<Vec<EmulatorDescriptor>, EmulatorDriverError> {
+    async fn list_instances(&self) -> Result<Vec<EmulatorDescriptor>, EmulatorDriverError> {
         let mut values = self
             .instances
             .values()
@@ -263,16 +239,11 @@ where
                 adb_serial: Some(config.adb_serial.clone()),
             })
             .collect::<Vec<_>>();
-        values.sort_by(|left, right| {
-            left.emulator_code.cmp(&right.emulator_code)
-        });
+        values.sort_by(|left, right| left.emulator_code.cmp(&right.emulator_code));
         Ok(values)
     }
 
-    async fn start(
-        &self,
-        instance_id: &str,
-    ) -> Result<(), EmulatorDriverError> {
+    async fn start(&self, instance_id: &str) -> Result<(), EmulatorDriverError> {
         let config = self.instance_config(instance_id)?;
 
         if let Some(program) = config.start_program.as_deref() {
@@ -289,10 +260,7 @@ where
         self.wait_for_adb(&config.adb_serial).await
     }
 
-    async fn stop(
-        &self,
-        instance_id: &str,
-    ) -> Result<(), EmulatorDriverError> {
+    async fn stop(&self, instance_id: &str) -> Result<(), EmulatorDriverError> {
         let config = self.instance_config(instance_id)?;
 
         if let Some(program) = config.stop_program.as_deref() {
@@ -309,28 +277,17 @@ where
         Ok(())
     }
 
-    async fn adb_serial(
-        &self,
-        instance_id: &str,
-    ) -> Result<Option<String>, EmulatorDriverError> {
+    async fn adb_serial(&self, instance_id: &str) -> Result<Option<String>, EmulatorDriverError> {
         Ok(Some(self.instance_config(instance_id)?.adb_serial))
     }
 
-    async fn status(
-        &self,
-        instance_id: &str,
-    ) -> Result<EmulatorStatus, EmulatorDriverError> {
+    async fn status(&self, instance_id: &str) -> Result<EmulatorStatus, EmulatorDriverError> {
         let config = self.instance_config(instance_id)?;
-        let args = vec![
-            "-s".to_string(),
-            config.adb_serial,
-            "get-state".to_string(),
-        ];
+        let args = vec!["-s".to_string(), config.adb_serial, "get-state".to_string()];
 
         match self.runner.run(&self.adb_program, &args).await {
             Ok(output)
-                if output.success
-                    && String::from_utf8_lossy(&output.stdout).trim() == "device" =>
+                if output.success && String::from_utf8_lossy(&output.stdout).trim() == "device" =>
             {
                 Ok(EmulatorStatus::Idle)
             }
@@ -339,10 +296,7 @@ where
         }
     }
 
-    async fn screenshot(
-        &self,
-        instance_id: &str,
-    ) -> Result<Vec<u8>, EmulatorDriverError> {
+    async fn screenshot(&self, instance_id: &str) -> Result<Vec<u8>, EmulatorDriverError> {
         let config = self.instance_config(instance_id)?;
         let args = vec![
             "-s".to_string(),
@@ -364,11 +318,7 @@ where
     }
 }
 
-fn command_failure(
-    operation: &str,
-    program: &str,
-    stderr: &[u8],
-) -> EmulatorDriverError {
+fn command_failure(operation: &str, program: &str, stderr: &[u8]) -> EmulatorDriverError {
     let stderr = String::from_utf8_lossy(stderr);
     EmulatorDriverError::Message(format!(
         "{operation} failed via {program}: {}",
