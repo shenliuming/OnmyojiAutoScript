@@ -1,9 +1,117 @@
-use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{
+    DateTime, Datelike, Duration, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc,
+};
 use chrono_tz::Tz;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuietWindow {
+    pub weekday_mask: u8,
+    pub start_time: NaiveTime,
+    pub end_time: NaiveTime,
+    pub before_buffer_minutes: i64,
+    pub after_buffer_minutes: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScheduleGate {
+    Open,
+    DeferredUntil(DateTime<Utc>),
+}
+
+pub fn evaluate_quiet_periods(
+    now: DateTime<Utc>,
+    timezone: Tz,
+    windows: &[QuietWindow],
+) -> ScheduleGate {
+    let local_now = now.with_timezone(&timezone);
+    let local_date = local_now.date_naive();
+    let mut latest_end: Option<DateTime<Utc>> = None;
+
+    for offset in -1_i64..=1 {
+        let Some(window_date) = local_date.checked_add_signed(Duration::days(offset)) else {
+            continue;
+        };
+
+        for window in windows {
+            if !weekday_enabled(window.weekday_mask, window_date) {
+                continue;
+            }
+
+            let start = NaiveDateTime::new(window_date, window.start_time);
+            let crosses_midnight = window.end_time <= window.start_time;
+            let end_date = if crosses_midnight {
+                window_date
+                    .checked_add_signed(Duration::days(1))
+                    .unwrap_or(window_date)
+            } else {
+                window_date
+            };
+            let end = NaiveDateTime::new(end_date, window.end_time);
+
+            let protected_start =
+                start - Duration::minutes(window.before_buffer_minutes.max(0));
+            let protected_end = end + Duration::minutes(window.after_buffer_minutes.max(0));
+
+            let Some(start_utc) = resolve_local(timezone, protected_start, Boundary::Start) else {
+                continue;
+            };
+            let Some(end_utc) = resolve_local(timezone, protected_end, Boundary::End) else {
+                continue;
+            };
+
+            if now >= start_utc && now < end_utc {
+                latest_end = Some(match latest_end {
+                    Some(current) => current.max(end_utc),
+                    None => end_utc,
+                });
+            }
+        }
+    }
+
+    latest_end
+        .map(ScheduleGate::DeferredUntil)
+        .unwrap_or(ScheduleGate::Open)
+}
+
+fn weekday_enabled(mask: u8, date: NaiveDate) -> bool {
+    let bit = 1_u8 << date.weekday().num_days_from_monday();
+    mask & bit != 0
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Boundary {
+    Start,
+    End,
+}
+
+fn resolve_local(
+    timezone: Tz,
+    mut local: NaiveDateTime,
+    boundary: Boundary,
+) -> Option<DateTime<Utc>> {
+    for _ in 0..=180 {
+        match timezone.from_local_datetime(&local) {
+            LocalResult::Single(value) => return Some(value.with_timezone(&Utc)),
+            LocalResult::Ambiguous(first, second) => {
+                let selected = match boundary {
+                    Boundary::Start => first.min(second),
+                    Boundary::End => first.max(second),
+                };
+                return Some(selected.with_timezone(&Utc));
+            }
+            LocalResult::None => {
+                local += Duration::minutes(1);
+            }
+        }
+    }
+
+    None
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Weekday;
 
     fn local_utc(tz: Tz, y: i32, m: u32, d: u32, h: u32, min: u32) -> DateTime<Utc> {
         tz.with_ymd_and_hms(y, m, d, h, min, 0)
