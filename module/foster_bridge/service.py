@@ -23,11 +23,19 @@ def _checkpoint(stage: str) -> FosterStageCheckpoint:
 
 class FosterBridgeService:
     def execute(self, request: FosterExecuteRequest) -> FosterExecuteResponse:
-        if request.resource_mode != "USER_FRIEND":
+        if request.resource_mode not in ("USER_FRIEND", "PLATFORM"):
             return FosterExecuteResponse(
                 success=False,
                 code="PROVIDER_NOT_FOUND",
-                message="PLATFORM foster execution is not enabled before resource allocation phase",
+                message=f"unsupported resource mode: {request.resource_mode}",
+            )
+
+        if request.resource_mode == "PLATFORM" and (
+                not request.provider_alias or not request.resource_type):
+            return FosterExecuteResponse(
+                success=False,
+                code="PROVIDER_NOT_FOUND",
+                message="PLATFORM foster requires provider_alias and resource_type",
             )
 
         account_hint = request.masked_account
@@ -94,7 +102,18 @@ class FosterBridgeService:
             )
 
         stages.append(_checkpoint("RUNNING"))
-        result = FosterOnceTask(config=config, device=device).execute_once()
+        result = FosterOnceTask(config=config, device=device).execute_once(
+            provider_alias=(
+                request.provider_alias
+                if request.resource_mode == "PLATFORM"
+                else None
+            ),
+            resource_type=(
+                request.resource_type
+                if request.resource_mode == "PLATFORM"
+                else None
+            ),
+        )
 
         return FosterExecuteResponse(
             success=result.success,
