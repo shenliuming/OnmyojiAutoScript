@@ -36,17 +36,19 @@ async fn accept_authenticated(
     listener: &TcpListener,
 ) -> anyhow::Result<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>> {
     let (stream, _) = listener.accept().await?;
-    Ok(accept_hdr_async(stream, |request: &Request, response: Response| {
-        assert_eq!(
-            request
-                .headers()
-                .get(http::header::AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("Bearer test-token")
-        );
-        Ok(response)
-    })
-    .await?)
+    Ok(
+        accept_hdr_async(stream, |request: &Request, response: Response| {
+            assert_eq!(
+                request
+                    .headers()
+                    .get(http::header::AUTHORIZATION)
+                    .and_then(|value| value.to_str().ok()),
+                Some("Bearer test-token")
+            );
+            Ok(response)
+        })
+        .await?,
+    )
 }
 
 async fn read_agent_event(
