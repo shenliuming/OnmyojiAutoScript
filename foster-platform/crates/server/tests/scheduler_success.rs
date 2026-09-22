@@ -117,11 +117,7 @@ async fn success_falls_back_to_configured_interval(pool: MySqlPool) -> anyhow::R
 
     assert_eq!(next, success_at + chrono::Duration::minutes(360));
 
-    let row: (
-        String,
-        Option<chrono::NaiveDateTime>,
-        Option<i32>,
-    ) = sqlx::query_as(
+    let row: (String, Option<chrono::NaiveDateTime>, Option<i32>) = sqlx::query_as(
         "SELECT status, finished_at, remaining_seconds
          FROM foster_job
          WHERE id = ?",
