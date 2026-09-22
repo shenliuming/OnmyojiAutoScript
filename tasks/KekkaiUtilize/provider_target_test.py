@@ -1,6 +1,7 @@
 import unittest
 
 from tasks.KekkaiUtilize.provider_target import (
+    expected_resource_card_type,
     find_provider_card_area,
     normalize_provider_alias,
     provider_alias_matches,
@@ -14,8 +15,19 @@ class ProviderTargetTest(unittest.TestCase):
     def test_alias_match_requires_meaningful_overlap(self):
         self.assertTrue(provider_alias_matches("资源A01", "资源 A01"))
         self.assertTrue(provider_alias_matches("ProviderOne", "ProviderOne Lv60"))
+        self.assertTrue(provider_alias_matches("资源A01", "资源A01 等级60"))
         self.assertFalse(provider_alias_matches("A1", "A2"))
         self.assertFalse(provider_alias_matches("资源A", "资源B"))
+        self.assertFalse(provider_alias_matches("资源A", "资源A备用"))
+        self.assertFalse(provider_alias_matches("资源A", "VIP资源A"))
+
+
+    def test_resource_type_maps_to_expected_game_card(self):
+        self.assertEqual(expected_resource_card_type("FISH"), "斗鱼")
+        self.assertEqual(expected_resource_card_type("DOUYU"), "斗鱼")
+        self.assertEqual(expected_resource_card_type("TAIKO_JADE"), "太鼓")
+        self.assertEqual(expected_resource_card_type("JADE"), "太鼓")
+        self.assertIsNone(expected_resource_card_type("UNKNOWN"))
 
     def test_pair_name_with_nearest_card_row(self):
         ocr_entries = [
