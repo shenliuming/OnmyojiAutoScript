@@ -221,7 +221,10 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 agent_version: env!("CARGO_PKG_VERSION").to_string(),
                 hostname,
                 os_version: std::env::consts::OS.to_string(),
-                capabilities: vec!["EMULATOR_DISCOVERY".to_string()],
+                capabilities: vec![
+                    "EMULATOR_DISCOVERY".to_string(),
+                    "LOGIN_EXECUTION".to_string(),
+                ],
             }),
         )
         .await
