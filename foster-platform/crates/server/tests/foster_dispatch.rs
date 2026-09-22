@@ -466,7 +466,11 @@ async fn platform_job_waits_when_no_resource_is_available(pool: MySqlPool) -> an
     let service = FosterDispatchService::new(pool.clone());
 
     let result = service
-        .dispatch_job(fixture.job_id, &AgentRegistry::default())
+        .dispatch_job_at(
+            fixture.job_id,
+            &AgentRegistry::default(),
+            Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap(),
+        )
         .await?;
 
     assert_eq!(result, DispatchFosterResult::WaitingResource);
@@ -545,7 +549,9 @@ async fn platform_dispatch_sends_exact_provider_and_confirms_on_success(
         command
     });
 
-    let result = service.dispatch_job(fixture.job_id, &registry).await?;
+    let result = service
+        .dispatch_job_at(fixture.job_id, &registry, base)
+        .await?;
     assert_eq!(result, DispatchFosterResult::Dispatched);
 
     let command = delivery.await?;
@@ -639,7 +645,9 @@ async fn provider_not_found_releases_slot_and_marks_binding_suspect(
     });
 
     assert_eq!(
-        service.dispatch_job(fixture.job_id, &registry).await?,
+        service
+            .dispatch_job_at(fixture.job_id, &registry, base)
+            .await?,
         DispatchFosterResult::Dispatched
     );
     delivery.await?;
@@ -708,7 +716,9 @@ async fn no_slot_quarantines_cycle_and_next_attempt_uses_other_provider(
     });
 
     assert_eq!(
-        service.dispatch_job(fixture.job_id, &registry).await?,
+        service
+            .dispatch_job_at(fixture.job_id, &registry, base)
+            .await?,
         DispatchFosterResult::Dispatched
     );
     let first = first_delivery.await?;
@@ -761,7 +771,9 @@ async fn no_slot_quarantines_cycle_and_next_attempt_uses_other_provider(
     });
 
     assert_eq!(
-        service.dispatch_job(fixture.job_id, &registry).await?,
+        service
+            .dispatch_job_at(fixture.job_id, &registry, base)
+            .await?,
         DispatchFosterResult::Dispatched
     );
 
@@ -812,7 +824,7 @@ async fn insufficient_identity_does_not_reserve_platform_slot(
 
     let service = FosterDispatchService::new(pool.clone());
     let result = service
-        .dispatch_job(fixture.job_id, &AgentRegistry::default())
+        .dispatch_job_at(fixture.job_id, &AgentRegistry::default(), base)
         .await?;
 
     assert_eq!(result, DispatchFosterResult::RejectedIdentity);
