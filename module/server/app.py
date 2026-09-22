@@ -16,6 +16,7 @@ from module.server.home_router import home_app
 from module.server.script_router import script_app
 from module.server.tool_router import tool_app
 from module.foster_bridge.router import foster_app
+from module.login_bridge.router import login_bridge_app
 from module.server.setting import State
 from module.server.main_manager import mm
 from starlette.staticfiles import StaticFiles
@@ -46,6 +47,7 @@ app.include_router(home_app)
 app.include_router(script_app)
 app.include_router(tool_app)
 app.include_router(foster_app)
+app.include_router(login_bridge_app)
 
 annotator_static_dir = Path(__file__).resolve().parent / "web" / "annotator" / "static"
 if annotator_static_dir.exists():
