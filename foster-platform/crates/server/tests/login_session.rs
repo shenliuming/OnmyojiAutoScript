@@ -40,11 +40,7 @@ async fn seed_account(pool: &MySqlPool) -> sqlx::Result<i64> {
     Ok(result.last_insert_id() as i64)
 }
 
-async fn seed_binding(
-    pool: &MySqlPool,
-    emulator_id: i64,
-    account_id: i64,
-) -> sqlx::Result<i64> {
+async fn seed_binding(pool: &MySqlPool, emulator_id: i64, account_id: i64) -> sqlx::Result<i64> {
     let result = sqlx::query(
         "INSERT INTO emulator_account_binding(
             emulator_id, game_account_id, slot_no, status
@@ -106,9 +102,7 @@ fn login_session_status_uses_stable_uppercase_names() {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn login_session_enforces_unique_session_and_tokens(
-    pool: MySqlPool,
-) -> sqlx::Result<()> {
+async fn login_session_enforces_unique_session_and_tokens(pool: MySqlPool) -> sqlx::Result<()> {
     let host_id = seed_host(&pool).await?;
     let emulator_id = seed_emulator(&pool, host_id).await?;
     let account_id = seed_account(&pool).await?;
@@ -168,9 +162,7 @@ async fn login_session_enforces_unique_session_and_tokens(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn login_session_rejects_unknown_binding(
-    pool: MySqlPool,
-) -> sqlx::Result<()> {
+async fn login_session_rejects_unknown_binding(pool: MySqlPool) -> sqlx::Result<()> {
     let host_id = seed_host(&pool).await?;
     let emulator_id = seed_emulator(&pool, host_id).await?;
     let account_id = seed_account(&pool).await?;
