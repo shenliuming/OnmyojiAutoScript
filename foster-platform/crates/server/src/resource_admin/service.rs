@@ -6,7 +6,8 @@ use sqlx::MySqlPool;
 
 use super::repository::{
     ProviderRow, ResourceCycleRow, game_account_exists, insert_resource_cycle, list_cycles,
-    list_providers, provider_exists, update_cycle_status, update_provider_status,
+    list_providers, provider_exists, resource_cycle_exists, update_cycle_status,
+    update_provider_status,
     upsert_friend_binding, upsert_provider,
 };
 
@@ -163,9 +164,10 @@ impl ResourceAdminService {
         status: &str,
     ) -> Result<(), ResourceAdminError> {
         let status = normalize_provider_status(status)?;
-        if !update_provider_status(&self.pool, provider_id, status).await? {
+        if !provider_exists(&self.pool, provider_id).await? {
             return Err(ResourceAdminError::ProviderNotFound);
         }
+        update_provider_status(&self.pool, provider_id, status).await?;
         Ok(())
     }
 
@@ -229,9 +231,10 @@ impl ResourceAdminService {
         status: &str,
     ) -> Result<(), ResourceAdminError> {
         let status = normalize_cycle_status(status)?;
-        if !update_cycle_status(&self.pool, cycle_id, status).await? {
+        if !resource_cycle_exists(&self.pool, cycle_id).await? {
             return Err(ResourceAdminError::CycleNotFound);
         }
+        update_cycle_status(&self.pool, cycle_id, status).await?;
         Ok(())
     }
 
