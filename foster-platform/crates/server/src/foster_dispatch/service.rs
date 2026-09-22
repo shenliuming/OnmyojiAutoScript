@@ -16,7 +16,8 @@ use crate::{
 };
 
 use super::repository::{
-    FosterDispatchTargetRow, FosterIdentityRow, current_job_status, job_belongs_to_host,
+    FosterDispatchTargetRow, FosterIdentityRow, current_job_retry_count, current_job_status,
+    job_belongs_to_host,
     load_dispatch_target, load_identity_rows, set_job_screenshot_url, set_job_waiting_resource,
 };
 
@@ -100,6 +101,7 @@ impl FosterDispatchService {
 
         let command = ServerCommand::ExecuteFoster(ExecuteFosterCommand {
             job_id,
+            attempt: target.retry_count,
             game_account_id: target.game_account_id,
             emulator_code: target.emulator_code,
             resource_mode,
@@ -161,6 +163,9 @@ impl FosterDispatchService {
         event: &FosterStageChanged,
     ) -> Result<(), FosterDispatchError> {
         if !job_belongs_to_host(&self.pool, event.job_id, host_id).await? {
+            return Ok(());
+        }
+        if !self.is_current_attempt(event.job_id, event.attempt).await? {
             return Ok(());
         }
 
@@ -226,6 +231,9 @@ impl FosterDispatchService {
         event: &FosterSucceeded,
     ) -> Result<(), FosterDispatchError> {
         if !job_belongs_to_host(&self.pool, event.job_id, host_id).await? {
+            return Ok(());
+        }
+        if !self.is_current_attempt(event.job_id, event.attempt).await? {
             return Ok(());
         }
 
@@ -304,6 +312,9 @@ impl FosterDispatchService {
         if !job_belongs_to_host(&self.pool, event.job_id, host_id).await? {
             return Ok(());
         }
+        if !self.is_current_attempt(event.job_id, event.attempt).await? {
+            return Ok(());
+        }
 
         let Some(status) = current_job_status(&self.pool, event.job_id).await? else {
             return Ok(());
@@ -331,6 +342,14 @@ impl FosterDispatchService {
         .await?;
 
         Ok(())
+    }
+
+    async fn is_current_attempt(
+        &self,
+        job_id: i64,
+        attempt: i32,
+    ) -> Result<bool, FosterDispatchError> {
+        Ok(current_job_retry_count(&self.pool, job_id).await? == Some(attempt))
     }
 
     async fn ensure_running(
