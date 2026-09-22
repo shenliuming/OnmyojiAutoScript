@@ -38,8 +38,7 @@ impl SchedulerService {
         for subscription_id in candidates {
             let mut tx = self.pool.begin().await?;
 
-            let Some(subscription) =
-                lock_due_subscription(&mut tx, subscription_id, now).await?
+            let Some(subscription) = lock_due_subscription(&mut tx, subscription_id, now).await?
             else {
                 tx.rollback().await?;
                 continue;
