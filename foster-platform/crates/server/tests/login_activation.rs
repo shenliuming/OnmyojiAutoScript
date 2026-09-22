@@ -112,10 +112,7 @@ async fn prepare_detected_identity(
     Ok(())
 }
 
-async fn post_confirm(
-    app: axum::Router,
-    token: &str,
-) -> anyhow::Result<axum::response::Response> {
+async fn post_confirm(app: axum::Router, token: &str) -> anyhow::Result<axum::response::Response> {
     Ok(app
         .oneshot(
             Request::builder()
@@ -145,7 +142,8 @@ async fn first_enrollment_activates_binding_and_account(pool: MySqlPool) -> anyh
     )
     .await?;
 
-    let response = post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
+    let response =
+        post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
     let body = json_body(response).await?;
@@ -223,7 +221,8 @@ async fn existing_trusted_identity_match_activates(pool: MySqlPool) -> anyhow::R
     )
     .await?;
 
-    let response = post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
+    let response =
+        post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
     let status: String =
@@ -261,7 +260,8 @@ async fn uid_conflict_rejects_activation(pool: MySqlPool) -> anyhow::Result<()> 
     )
     .await?;
 
-    let response = post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
+    let response =
+        post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
     assert_eq!(response.status(), StatusCode::CONFLICT);
 
     let binding_status: String =
@@ -287,7 +287,8 @@ async fn masked_only_identity_cannot_activate(pool: MySqlPool) -> anyhow::Result
     )
     .await?;
 
-    let response = post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
+    let response =
+        post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
     assert_eq!(response.status(), StatusCode::CONFLICT);
 
     let status: String =
@@ -390,7 +391,8 @@ async fn session_binding_mismatch_rejects_activation(pool: MySqlPool) -> anyhow:
     )
     .await?;
 
-    let response = post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
+    let response =
+        post_confirm(build_app(test_state(pool.clone())), &fixture.control_token).await?;
     assert_eq!(response.status(), StatusCode::CONFLICT);
 
     let session_status: String =
