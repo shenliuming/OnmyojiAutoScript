@@ -151,8 +151,15 @@ async fn add_quiet_period(
 async fn manual_pause_outranks_quiet_period(pool: MySqlPool) -> anyhow::Result<()> {
     let now = Utc.with_ymd_and_hms(2026, 9, 21, 12, 30, 0).unwrap();
     let pause_until = now + Duration::minutes(90);
-    let fixture =
-        seed_gate_fixture(&pool, "manual-first", now, Some(pause_until), "PENDING", None).await?;
+    let fixture = seed_gate_fixture(
+        &pool,
+        "manual-first",
+        now,
+        Some(pause_until),
+        "PENDING",
+        None,
+    )
+    .await?;
 
     add_quiet_period(&pool, fixture.account_id, 1, "20:00:00", "23:00:00", 0, 0).await?;
 
@@ -205,9 +212,7 @@ async fn quiet_deferral_records_exact_end(pool: MySqlPool) -> anyhow::Result<()>
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn cross_midnight_quiet_period_loaded_from_database(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn cross_midnight_quiet_period_loaded_from_database(pool: MySqlPool) -> anyhow::Result<()> {
     let now = Utc.with_ymd_and_hms(2026, 9, 21, 16, 30, 0).unwrap();
     let expected = Utc.with_ymd_and_hms(2026, 9, 21, 17, 0, 0).unwrap();
     let fixture = seed_gate_fixture(&pool, "cross-midnight", now, None, "PENDING", None).await?;
