@@ -1,8 +1,4 @@
-use std::{
-    collections::HashSet,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -12,9 +8,7 @@ use tokio::sync::Mutex;
 
 use crate::emulator::{CommandRunner, GenericAdbEmulatorDriver};
 
-use super::{
-    LoginExecutor, LoginExecutorError, LoginIdentity, LoginPrepared,
-};
+use super::{LoginExecutor, LoginExecutorError, LoginIdentity, LoginPrepared};
 
 #[derive(Clone)]
 pub struct HttpOasLoginExecutor<R>
@@ -92,10 +86,7 @@ where
             .await
             .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
 
-        let qr_payload = format!(
-            "data:image/png;base64,{}",
-            STANDARD.encode(png)
-        );
+        let qr_payload = format!("data:image/png;base64,{}", STANDARD.encode(png));
 
         Ok(LoginPrepared {
             qr_payload,
@@ -159,10 +150,7 @@ where
         }
     }
 
-    async fn cancel(
-        &self,
-        session_no: &str,
-    ) -> Result<(), LoginExecutorError> {
+    async fn cancel(&self, session_no: &str) -> Result<(), LoginExecutorError> {
         self.cancelled.lock().await.insert(session_no.to_string());
         Ok(())
     }
