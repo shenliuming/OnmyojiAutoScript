@@ -5,6 +5,7 @@ pub struct FosterDispatchTargetRow {
     pub job_id: i64,
     pub game_account_id: i64,
     pub status: String,
+    pub retry_count: i32,
     pub host_id: i64,
     pub emulator_code: String,
     pub resource_mode: String,
@@ -31,6 +32,7 @@ pub async fn load_dispatch_target(
             j.id AS job_id,
             j.game_account_id,
             j.status,
+            j.retry_count,
             e.host_id,
             e.emulator_code,
             s.resource_mode,
@@ -149,4 +151,19 @@ pub async fn set_job_waiting_resource(
     .await?;
 
     Ok(())
+}
+
+
+pub async fn current_job_retry_count(
+    pool: &MySqlPool,
+    job_id: i64,
+) -> Result<Option<i32>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT retry_count
+         FROM foster_job
+         WHERE id = ?",
+    )
+    .bind(job_id)
+    .fetch_optional(pool)
+    .await
 }
