@@ -21,7 +21,8 @@ use super::{
     model::CreatedLoginSession,
     repository::{
         NewLoginSession, TrustedIdentityRow, activate_game_account, activate_pending_binding,
-        cancel_login_session_row, complete_login_session, find_expired_login_session_ids,
+        activate_pending_subscriptions, cancel_login_session_row, complete_login_session,
+        find_expired_login_session_ids,
         insert_enrollment_identity, insert_login_session, load_trusted_identities, lock_binding,
         lock_game_account, lock_login_dispatch_target, lock_login_session_by_control_hash,
         lock_login_session_by_id, mark_login_failed, mark_login_identity_detected,
@@ -329,6 +330,8 @@ impl EnrollmentService {
         if !complete_login_session(&mut tx, session.id).await? {
             return Err(EnrollmentError::InvalidLoginState);
         }
+
+        activate_pending_subscriptions(&mut tx, account.id).await?;
 
         tx.commit().await?;
         Ok(session.session_no)
