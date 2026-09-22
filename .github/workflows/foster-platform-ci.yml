@@ -1,16 +1,16 @@
 name: Foster Platform CI
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - feat/foster-platform
     paths:
-      - "foster-platform/**"
-      - ".github/workflows/foster-platform-ci.yml"
-  pull_request:
-    paths:
-      - "foster-platform/**"
-      - ".github/workflows/foster-platform-ci.yml"
+      - ".github/ci-trigger/foster-platform"
+
+concurrency:
+  group: foster-platform-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   rust:
