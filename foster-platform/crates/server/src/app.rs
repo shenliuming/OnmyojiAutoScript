@@ -67,7 +67,6 @@ fn spawn_stale_sweeper(state: AppState) {
     });
 }
 
-
 fn spawn_foster_scheduler(state: AppState) {
     tokio::spawn(async move {
         let interval = std::env::var("FOSTER_SCHEDULER_INTERVAL_SECONDS")
