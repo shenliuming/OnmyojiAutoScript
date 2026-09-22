@@ -16,6 +16,7 @@ from tasks.Utils.config_enum import ShikigamiClass
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
 from tasks.KekkaiUtilize.utils import CardClass, target_to_card_class
+from tasks.KekkaiUtilize.provider_target import find_provider_card_area
 from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.GameUi.page import page_main, page_guild
 from module.base.utils import point2str
@@ -422,7 +423,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
     def run_utilize(self, friend: SelectFriendList = SelectFriendList.SAME_SERVER,
                     shikigami_class: ShikigamiClass = ShikigamiClass.N,
-                    shikigami_order: int = 7):
+                    shikigami_order: int = 7,
+                    provider_alias: str = None,
+                    resource_type: str = None):
         """
         执行寄养
         :param shikigami_class:
@@ -446,7 +449,13 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.switch_friend_list(friend)
 
         # --------------- 结界卡选择 ---------------
-        if not self._select_optimal_resource_card():
+        if provider_alias:
+            if not self._select_provider_resource_card(provider_alias, resource_type, friend):
+                if not self.foster_bridge_error_code:
+                    self.foster_bridge_error_code = 'PROVIDER_NOT_FOUND'
+                    self.foster_bridge_error_message = 'specified platform provider was not found'
+                return False
+        elif not self._select_optimal_resource_card():
             self.foster_bridge_error_code = 'PROVIDER_NOT_FOUND'
             self.foster_bridge_error_message = 'no suitable foster resource card found'
             return False
@@ -513,6 +522,85 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         # 上式神
         self.set_shikigami(shikigami_order, stop_image)
         return True
+
+    def _select_provider_resource_card(
+            self,
+            provider_alias: str,
+            resource_type: str,
+            preferred_friend: SelectFriendList = SelectFriendList.SAME_SERVER):
+        """Select only the Server-assigned platform provider row."""
+        expected_card_type = {
+            'FISH': '斗鱼',
+            'DOUYU': '斗鱼',
+            'TAIKO_JADE': '太鼓',
+            'JADE': '太鼓',
+            'TAIKO': '太鼓',
+        }.get((resource_type or '').upper())
+
+        if not expected_card_type:
+            self.foster_bridge_error_code = 'PROVIDER_NOT_FOUND'
+            self.foster_bridge_error_message = f'unsupported platform resource type: {resource_type}'
+            return False
+
+        scopes = [preferred_friend]
+        alternate = (
+            SelectFriendList.DIFFERENT_SERVER
+            if preferred_friend == SelectFriendList.SAME_SERVER
+            else SelectFriendList.SAME_SERVER
+        )
+        scopes.append(alternate)
+
+        for scope in scopes:
+            self.switch_friend_list(scope)
+            for _ in range(21):
+                self.screenshot()
+                cards = self.order_targets.find_everyone(self.device.image)
+                card_areas = [area for _, _, area in cards]
+                ocr_results = self.O_PROVIDER_FRIEND_NAMES.detect_and_ocr(
+                    self.device.image,
+                    logDisplay=False,
+                )
+                ocr_entries = [
+                    (result.ocr_text, result.box)
+                    for result in ocr_results
+                    if result.ocr_text
+                ]
+                area = find_provider_card_area(
+                    provider_alias,
+                    ocr_entries,
+                    card_areas,
+                    ocr_origin_y=self.O_PROVIDER_FRIEND_NAMES.roi[1],
+                )
+
+                if area is not None:
+                    self.C_SELECT_CARD.roi_front = area
+                    self.click(self.C_SELECT_CARD)
+                    time.sleep(2)
+                    card_type, card_value = self.check_card_num()
+
+                    if card_type != expected_card_type or card_value <= 0:
+                        self.foster_bridge_error_code = 'PROVIDER_NOT_FOUND'
+                        self.foster_bridge_error_message = (
+                            f'provider {provider_alias} resource mismatch: '
+                            f'expected {expected_card_type}, got {card_type}@{card_value}'
+                        )
+                        return False
+
+                    logger.info(
+                        'Platform provider matched: %s, resource=%s@%s',
+                        provider_alias,
+                        card_type,
+                        card_value,
+                    )
+                    return True
+
+                self.perform_swipe_action()
+
+        self.foster_bridge_error_code = 'PROVIDER_NOT_FOUND'
+        self.foster_bridge_error_message = (
+            f'platform provider alias not found: {provider_alias}'
+        )
+        return False
 
     def _select_optimal_resource_card(self):
         """整合后的智能选卡主逻辑（无嵌套函数版）"""
