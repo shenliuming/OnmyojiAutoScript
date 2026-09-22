@@ -170,6 +170,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 socket,
                 AgentEvent::FosterFailed(foster_protocol::FosterFailed {
                     job_id: command.job_id,
+                    attempt: command.attempt,
                     failed_at: chrono::Utc::now(),
                     error_code: foster_domain::FosterErrorCode::EmulatorOffline,
                     message: "foster executor is not configured".to_string(),
@@ -181,9 +182,10 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         };
 
         let job_id = command.job_id;
+        let attempt = command.attempt;
         let execution = executor.execute(&command).await?;
 
-        for event in events_for_execution(job_id, execution) {
+        for event in events_for_execution(job_id, attempt, execution) {
             self.send_event(socket, event).await?;
         }
 
