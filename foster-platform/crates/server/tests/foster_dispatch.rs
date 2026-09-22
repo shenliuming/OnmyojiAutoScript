@@ -157,8 +157,9 @@ async fn seed_platform_resource(
         "INSERT INTO provider_account(
             provider_code, nickname, provider_alias, server_name, status
          )
-         VALUES ('PROVIDER-DISPATCH', '资源号', ?, '春之樱', 'ACTIVE')",
+         VALUES (?, '资源号', ?, '春之樱', 'ACTIVE')",
     )
+    .bind(format!("PROVIDER-{alias}"))
     .bind(alias)
     .execute(pool)
     .await?
@@ -684,6 +685,102 @@ async fn provider_not_found_releases_slot_and_marks_binding_suspect(
     .await?;
     assert_eq!(binding.0, "SUSPECT");
     assert_eq!(binding.1.as_deref(), Some("PROVIDER_NOT_FOUND"));
+
+    Ok(())
+}
+
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn no_slot_quarantines_cycle_and_next_attempt_uses_other_provider(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_fixture(&pool, "PLATFORM").await?;
+    let base = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
+    let (_provider_a, cycle_a) =
+        seed_platform_resource(&pool, fixture.account_id, base, "资源A03").await?;
+    let (_provider_b, cycle_b) =
+        seed_platform_resource(&pool, fixture.account_id, base, "资源B03").await?;
+
+    let service = FosterDispatchService::new(pool.clone());
+    let (registry, mut receiver) = online_registry(fixture.host_id);
+    let first_delivery = tokio::spawn(async move {
+        let outbound = receiver.recv().await.expect("first command");
+        let command = outbound.envelope.payload.clone();
+        let _ = outbound.delivered.send(Ok(()));
+        command
+    });
+
+    assert_eq!(
+        service.dispatch_job(fixture.job_id, &registry).await?,
+        DispatchFosterResult::Dispatched
+    );
+    let first = first_delivery.await?;
+    let ServerCommand::ExecuteFoster(first) = first else {
+        panic!("expected first ExecuteFoster");
+    };
+    assert_eq!(first.provider_alias.as_deref(), Some("资源A03"));
+
+    service
+        .process_agent_event(
+            fixture.host_id,
+            &AgentEvent::FosterFailed(FosterFailed {
+                job_id: fixture.job_id,
+                attempt: 0,
+                failed_at: base + chrono::Duration::minutes(1),
+                error_code: FosterErrorCode::NoSlot,
+                message: "friend realm has no available foster slot".into(),
+                screenshot_url: None,
+            }),
+        )
+        .await?;
+
+    let cycle_a_state: (i32, String) = sqlx::query_as(
+        "SELECT occupied_slots, status
+         FROM foster_resource_cycle
+         WHERE id = ?",
+    )
+    .bind(cycle_a)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(cycle_a_state.0, 0);
+    assert_eq!(cycle_a_state.1, "FULL");
+
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = 'SWITCHING_ACCOUNT',
+             retry_after = NULL
+         WHERE id = ?",
+    )
+    .bind(fixture.job_id)
+    .execute(&pool)
+    .await?;
+
+    let (registry, mut receiver) = online_registry(fixture.host_id);
+    let second_delivery = tokio::spawn(async move {
+        let outbound = receiver.recv().await.expect("second command");
+        let command = outbound.envelope.payload.clone();
+        let _ = outbound.delivered.send(Ok(()));
+        command
+    });
+
+    assert_eq!(
+        service.dispatch_job(fixture.job_id, &registry).await?,
+        DispatchFosterResult::Dispatched
+    );
+
+    let second = second_delivery.await?;
+    let ServerCommand::ExecuteFoster(second) = second else {
+        panic!("expected second ExecuteFoster");
+    };
+    assert_eq!(second.attempt, 1);
+    assert_eq!(second.provider_alias.as_deref(), Some("资源B03"));
+
+    let occupied_b: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_b)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(occupied_b, 1);
 
     Ok(())
 }
