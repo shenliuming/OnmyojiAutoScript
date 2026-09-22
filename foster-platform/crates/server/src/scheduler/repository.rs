@@ -144,7 +144,6 @@ pub async fn clear_next_run(
     Ok(())
 }
 
-
 #[derive(Debug, sqlx::FromRow)]
 pub struct JobGateRow {
     pub id: i64,
