@@ -43,7 +43,7 @@ fn successful_execution_preserves_stage_order_before_success() {
         detected_identity: identity(),
     };
 
-    let events = events_for_execution(42, execution);
+    let events = events_for_execution(42, 3, execution);
 
     assert!(matches!(
         &events[0],
@@ -63,7 +63,7 @@ fn successful_execution_preserves_stage_order_before_success() {
     assert!(matches!(
         &events[3],
         AgentEvent::FosterSucceeded(value)
-            if value.job_id == 42 && value.remaining_seconds == Some(21_600)
+            if value.job_id == 42 && value.attempt == 3 && value.remaining_seconds == Some(21_600)
     ));
 }
 
@@ -81,13 +81,14 @@ fn failed_execution_emits_structured_failure() {
         detected_identity: identity(),
     };
 
-    let events = events_for_execution(7, execution);
+    let events = events_for_execution(7, 1, execution);
 
     assert_eq!(events.len(), 1);
     assert!(matches!(
         &events[0],
         AgentEvent::FosterFailed(value)
             if value.job_id == 7
+                && value.attempt == 1
                 && value.error_code == FosterErrorCode::NetworkError
     ));
 }
