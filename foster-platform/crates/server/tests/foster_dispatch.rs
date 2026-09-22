@@ -183,6 +183,7 @@ async fn dispatch_builds_passwordless_identity_command(pool: MySqlPool) -> anyho
     };
 
     assert_eq!(command.job_id, fixture.job_id);
+    assert_eq!(command.attempt, 0);
     assert_eq!(command.game_account_id, fixture.account_id);
     assert_eq!(command.resource_mode, ResourceMode::UserFriend);
     assert_eq!(
@@ -235,6 +236,7 @@ async fn success_event_verifies_identity_and_schedules_next_run(
             fixture.host_id,
             &AgentEvent::FosterStageChanged(FosterStageChanged {
                 job_id: fixture.job_id,
+                attempt: 0,
                 stage: FosterStage::VerifyingAccount,
                 occurred_at: at,
             }),
@@ -245,6 +247,7 @@ async fn success_event_verifies_identity_and_schedules_next_run(
             fixture.host_id,
             &AgentEvent::FosterStageChanged(FosterStageChanged {
                 job_id: fixture.job_id,
+                attempt: 0,
                 stage: FosterStage::Running,
                 occurred_at: at + chrono::Duration::seconds(1),
             }),
@@ -255,6 +258,7 @@ async fn success_event_verifies_identity_and_schedules_next_run(
             fixture.host_id,
             &AgentEvent::FosterSucceeded(FosterSucceeded {
                 job_id: fixture.job_id,
+                attempt: 0,
                 completed_at: at + chrono::Duration::seconds(10),
                 remaining_seconds: Some(1_800),
                 screenshot_url: Some("file:///success.png".into()),
@@ -303,6 +307,7 @@ async fn identity_mismatch_success_event_suspends_account(
             fixture.host_id,
             &AgentEvent::FosterSucceeded(FosterSucceeded {
                 job_id: fixture.job_id,
+                attempt: 0,
                 completed_at: at,
                 remaining_seconds: Some(1_800),
                 screenshot_url: None,
@@ -343,6 +348,7 @@ async fn network_failure_from_switching_stage_retries(pool: MySqlPool) -> anyhow
             fixture.host_id,
             &AgentEvent::FosterFailed(FosterFailed {
                 job_id: fixture.job_id,
+                attempt: 0,
                 failed_at: at,
                 error_code: FosterErrorCode::NetworkError,
                 message: "connection refused".into(),
@@ -374,6 +380,7 @@ async fn duplicate_terminal_success_event_is_ignored(pool: MySqlPool) -> anyhow:
     let at = Utc.with_ymd_and_hms(2026, 9, 22, 12, 5, 0).unwrap();
     let event = AgentEvent::FosterSucceeded(FosterSucceeded {
         job_id: fixture.job_id,
+        attempt: 0,
         completed_at: at,
         remaining_seconds: Some(1_800),
         screenshot_url: None,
