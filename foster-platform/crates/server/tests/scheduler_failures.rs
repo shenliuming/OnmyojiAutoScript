@@ -245,12 +245,11 @@ async fn login_expired_suspends_subscription(pool: MySqlPool) -> anyhow::Result<
 
     assert_eq!(decision, RetryDecision::SuspendAccount);
 
-    let job: (String, Option<chrono::NaiveDateTime>) = sqlx::query_as(
-        "SELECT status, finished_at FROM foster_job WHERE id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let job: (String, Option<chrono::NaiveDateTime>) =
+        sqlx::query_as("SELECT status, finished_at FROM foster_job WHERE id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(job.0, "FAILED");
     assert!(job.1.is_some());
 
@@ -303,12 +302,7 @@ async fn unknown_error_retries_then_fails_and_restores_schedule(
     for attempt in 0..2 {
         let at = now + chrono::Duration::minutes(i64::from(attempt) * 6);
         let decision = scheduler
-            .handle_failure(
-                fixture.job_id,
-                FosterErrorCode::Unknown,
-                "unknown",
-                at,
-            )
+            .handle_failure(fixture.job_id, FosterErrorCode::Unknown, "unknown", at)
             .await?;
 
         assert_eq!(
