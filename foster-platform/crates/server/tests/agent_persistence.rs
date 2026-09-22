@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use foster_domain::EmulatorStatus;
 use foster_protocol::{
-    AgentEnvelope, AgentEvent, AgentHello, EmulatorDescriptor, EmulatorHeartbeat,
-    EmulatorSnapshot, Heartbeat, PROTOCOL_VERSION,
+    AgentEnvelope, AgentEvent, AgentHello, EmulatorDescriptor, EmulatorHeartbeat, EmulatorSnapshot,
+    Heartbeat, PROTOCOL_VERSION,
 };
 use foster_server::{
     agent_gateway::registry::AgentRegistry,
@@ -325,7 +325,6 @@ async fn emulator_snapshot_preserves_server_controlled_fields(
 
     Ok(())
 }
-
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn heartbeat_updates_emulator_status(pool: MySqlPool) -> anyhow::Result<()> {
