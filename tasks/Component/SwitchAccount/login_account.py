@@ -59,6 +59,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 tmp = set(svrName).intersection(set(ocrSvrName))
                 if len(tmp) > max(len(svrName), len(ocrSvrName)) * thresh:
                     logger.info("found svr %s which is similar with %s", ocrSvrName, svrName)
+                    self.last_detected_server = ocrSvrName
                     found = True
                     # 确定点击位置
                     box = ocrRes[index].box
@@ -129,6 +130,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 tmpClick.roi_front[1] -= 30
                 self.ui_click_until_disappear(tmpClick, stop=self.I_SA_CHECK_SELECT_SVR_2,
                                               interval=3)
+                self.last_detected_character = item
                 logger.info("character %s found,and clicked svr icon", characterName)
                 return True
             if lastCharacterNameList == characterNameList:
@@ -192,6 +194,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                         ocrResBoxList[index][2][1] - ocrResBoxList[index][1][1]]
                     time.sleep(1)
                     self.click(self.O_SA_ACCOUNT_ACCOUNT_LIST)
+                    self.last_detected_account = ocr_account
                     logger.info("account [ %s ] found", accountInfo.account)
                     return True
 
@@ -280,6 +283,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 ocrRes = self.O_SA_LOGIN_FORM_USER_CENTER_ACCOUNT.ocr_single(self.device.image)
                 # NOTE 由于邮箱账号@符号极易被误识别为其他,故对账号信息做预处理 便于比对
                 if (accountInfo.account is None) or accountInfo.account == "" or accountInfo.is_account_alias(ocrRes):
+                    self.last_detected_account = ocrRes
                     logger.info("current is the account we want:ocr result %s", ocrRes)
                     isAccountLogon = True
                     self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_USER_CENTER_CLOSE_BTN, interval=1,
@@ -312,6 +316,15 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         if isAccountLogon and isCharacterSelected:
             # 成功登录账号 找到角色
             # self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_ENTER_GAME_BTN, stop=self.I_CHECK_LOGIN_FORM)
+            if not getattr(self, "last_detected_character", None):
+                self.last_detected_character = accountInfo.character
+            if not getattr(self, "last_detected_server", None):
+                try:
+                    current_server = self.get_svr_name()
+                    if isinstance(current_server, str) and current_server:
+                        self.last_detected_server = current_server
+                except Exception:
+                    pass
             logger.info("character %s-%s account:%s %s login Success", accountInfo.character, accountInfo.svr,
                         accountInfo.account,
                         'Android' if accountInfo.apple_or_android else 'Apple')
