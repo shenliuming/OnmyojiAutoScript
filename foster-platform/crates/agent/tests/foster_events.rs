@@ -1,11 +1,7 @@
 use chrono::{TimeZone, Utc};
-use foster_agent::foster::{
-    FosterExecution, FosterStageCheckpoint, events_for_execution,
-};
+use foster_agent::foster::{FosterExecution, FosterStageCheckpoint, events_for_execution};
 use foster_domain::FosterErrorCode;
-use foster_protocol::{
-    AgentEvent, FosterDetectedIdentity, FosterStage,
-};
+use foster_protocol::{AgentEvent, FosterDetectedIdentity, FosterStage};
 
 fn identity() -> FosterDetectedIdentity {
     FosterDetectedIdentity {
