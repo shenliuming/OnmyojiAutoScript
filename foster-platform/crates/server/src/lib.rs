@@ -4,4 +4,5 @@ pub mod config;
 pub mod control_plane;
 pub mod enrollment;
 pub mod foster_dispatch;
+pub mod resource_pool;
 pub mod scheduler;
