@@ -160,15 +160,21 @@ async fn near_expiry_cycle_is_not_allocated(pool: MySqlPool) -> anyhow::Result<(
 
     let result = ResourcePoolService::new(pool.clone())
         .with_min_remaining_minutes(330)
+        .with_retry_seconds(60)
         .reserve_for_job(job.job_id, now)
         .await?;
 
     assert_eq!(result, ReserveForJobResult::WaitingResource);
-    let status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
-        .bind(job.job_id)
-        .fetch_one(&pool)
-        .await?;
-    assert_eq!(status, "WAITING_RESOURCE");
+    let state: (String, Option<chrono::NaiveDateTime>) =
+        sqlx::query_as("SELECT status, retry_after FROM foster_job WHERE id = ?")
+            .bind(job.job_id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(state.0, "WAITING_RESOURCE");
+    assert_eq!(
+        state.1,
+        Some((now + chrono::Duration::seconds(60)).naive_utc())
+    );
 
     Ok(())
 }
@@ -189,6 +195,7 @@ async fn only_verified_friend_binding_is_allocatable(pool: MySqlPool) -> anyhow:
     bind_friend(&pool, job.account_id, provider_id, "SUSPECT").await?;
 
     let result = ResourcePoolService::new(pool.clone())
+        .with_retry_seconds(60)
         .reserve_for_job(job.job_id, now)
         .await?;
 
