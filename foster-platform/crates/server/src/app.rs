@@ -5,6 +5,7 @@ use sqlx::MySqlPool;
 use crate::{
     agent_gateway::{handler::ws_handler, registry::AgentRegistry},
     config::AgentGatewayConfig,
+    enrollment::{public_api::get_public_login, sse::login_status_events},
 };
 
 #[derive(Clone)]
@@ -20,6 +21,11 @@ pub fn build_app(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/agent/ws", get(ws_handler))
+        .route("/public/login/{public_token}", get(get_public_login))
+        .route(
+            "/public/login/{public_token}/events",
+            get(login_status_events),
+        )
         .with_state(state)
 }
 
