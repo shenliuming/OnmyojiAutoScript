@@ -5,9 +5,9 @@ use sqlx::MySqlPool;
 use super::repository::{
     AllocationRow, attach_allocation_to_job, confirm_allocation, finish_allocation,
     insert_reserved_allocation, list_expirable_job_ids, list_resource_candidates,
-    load_live_allocation, lock_releasable_allocation, lock_resource_job,
-    mark_cycle_full, mark_expired_cycles, mark_friend_binding_suspect, release_cycle_slot,
-    set_job_waiting_resource, try_reserve_cycle,
+    load_live_allocation, lock_releasable_allocation, lock_resource_job, mark_cycle_full,
+    mark_expired_cycles, mark_friend_binding_suspect, release_cycle_slot, set_job_waiting_resource,
+    try_reserve_cycle,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -195,13 +195,8 @@ impl ResourcePoolService {
             .unwrap_or_else(|| i64::from(job.interval_minutes) * 60);
         let occupied_until = completed_at + chrono::Duration::seconds(duration_seconds);
 
-        let confirmed = confirm_allocation(
-            &mut tx,
-            allocation.id,
-            completed_at,
-            occupied_until,
-        )
-        .await?;
+        let confirmed =
+            confirm_allocation(&mut tx, allocation.id, completed_at, occupied_until).await?;
         tx.commit().await?;
 
         Ok(confirmed)
@@ -254,10 +249,7 @@ impl ResourcePoolService {
         }))
     }
 
-    pub async fn mark_no_slot(
-        &self,
-        resource_cycle_id: i64,
-    ) -> Result<(), ResourcePoolError> {
+    pub async fn mark_no_slot(&self, resource_cycle_id: i64) -> Result<(), ResourcePoolError> {
         let mut tx = self.pool.begin().await?;
         mark_cycle_full(&mut tx, resource_cycle_id).await?;
         tx.commit().await?;
@@ -283,10 +275,7 @@ impl ResourcePoolService {
         Ok(())
     }
 
-    pub async fn reap(
-        &self,
-        now: DateTime<Utc>,
-    ) -> Result<ResourceReapReport, ResourcePoolError> {
+    pub async fn reap(&self, now: DateTime<Utc>) -> Result<ResourceReapReport, ResourcePoolError> {
         let mut tx = self.pool.begin().await?;
         let job_ids = list_expirable_job_ids(&mut tx, now).await?;
         tx.commit().await?;
@@ -332,7 +321,9 @@ fn parse_resource_type(value: &str) -> Result<ResourceType, ResourcePoolError> {
     match value {
         "FISH" | "DOUYU" => Ok(ResourceType::Fish),
         "TAIKO_JADE" | "JADE" | "TAIKO" => Ok(ResourceType::TaikoJade),
-        other => Err(ResourcePoolError::UnsupportedResourceType(other.to_string())),
+        other => Err(ResourcePoolError::UnsupportedResourceType(
+            other.to_string(),
+        )),
     }
 }
 
