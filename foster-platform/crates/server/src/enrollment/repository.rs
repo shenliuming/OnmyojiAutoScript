@@ -402,3 +402,84 @@ pub async fn complete_login_session(
 
     Ok(result.rows_affected() == 1)
 }
+
+
+pub async fn find_expired_login_session_ids(
+    pool: &MySqlPool,
+) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT id
+         FROM login_session
+         WHERE expires_at <= NOW(3)
+           AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')
+         ORDER BY id ASC",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn lock_login_session_by_id(
+    tx: &mut Transaction<'_, MySql>,
+    session_id: i64,
+) -> Result<Option<LockedLoginSession>, sqlx::Error> {
+    sqlx::query_as::<_, LockedLoginSession>(
+        "SELECT
+            id,
+            session_no,
+            game_account_id,
+            binding_id,
+            emulator_id,
+            status,
+            expires_at,
+            detected_masked_account,
+            detected_character_name,
+            detected_server_name,
+            detected_game_uid
+         FROM login_session
+         WHERE id = ?
+         FOR UPDATE",
+    )
+    .bind(session_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn cancel_login_session_row(
+    tx: &mut Transaction<'_, MySql>,
+    session_id: i64,
+    reason: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE login_session
+         SET status = 'CANCELLED',
+             failed_reason = ?,
+             qr_payload = NULL,
+             qr_expires_at = NULL
+         WHERE id = ?
+           AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+    )
+    .bind(reason)
+    .bind(session_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn release_pending_binding_tx(
+    tx: &mut Transaction<'_, MySql>,
+    binding_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE emulator_account_binding
+         SET status = 'UNBOUND',
+             unbound_at = NOW(3)
+         WHERE id = ?
+           AND status = 'PENDING'",
+    )
+    .bind(binding_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected() == 1)
+}
