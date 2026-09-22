@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
 
 use super::repository::{
-    PortalSubscriptionRow, QuietPeriodRow, RecentJobRow, count_successes_between,
+    QuietPeriodRow, RecentJobRow, count_successes_between,
     clear_manual_pause, insert_share_link, load_portal_subscription, load_quiet_periods,
     load_recent_jobs, load_share_by_control_hash, load_share_by_public_hash, replace_quiet_periods,
     revoke_active_links, set_manual_pause_until, touch_share_link,
