@@ -132,10 +132,7 @@ async fn seed_bound_job(
     })
 }
 
-async fn add_quiet_period(
-    pool: &MySqlPool,
-    account_id: i64,
-) -> anyhow::Result<()> {
+async fn add_quiet_period(pool: &MySqlPool, account_id: i64) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO foster_quiet_period(
             game_account_id, weekday_mask,
@@ -153,9 +150,7 @@ async fn add_quiet_period(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn two_accounts_on_same_emulator_only_one_claims(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn two_accounts_on_same_emulator_only_one_claims(pool: MySqlPool) -> anyhow::Result<()> {
     let now = Utc.with_ymd_and_hms(2026, 9, 21, 10, 0, 0).unwrap();
     let host_id = seed_host(&pool, "race", "ONLINE").await?;
     let emulator_id = seed_emulator(&pool, host_id, "race", "IDLE").await?;
@@ -187,14 +182,11 @@ async fn two_accounts_on_same_emulator_only_one_claims(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn offline_emulator_moves_job_to_waiting(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn offline_emulator_moves_job_to_waiting(pool: MySqlPool) -> anyhow::Result<()> {
     let now = Utc.with_ymd_and_hms(2026, 9, 21, 10, 0, 0).unwrap();
     let host_id = seed_host(&pool, "offline", "OFFLINE").await?;
     let emulator_id = seed_emulator(&pool, host_id, "offline", "OFFLINE").await?;
-    let fixture =
-        seed_bound_job(&pool, emulator_id, "offline", 1, now, "PENDING", None).await?;
+    let fixture = seed_bound_job(&pool, emulator_id, "offline", 1, now, "PENDING", None).await?;
 
     let scheduler = SchedulerService::new(pool.clone());
 
@@ -203,12 +195,10 @@ async fn offline_emulator_moves_job_to_waiting(
         ClaimResult::WaitingEmulator
     );
 
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_job WHERE id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+        .bind(fixture.job_id)
+        .fetch_one(&pool)
+        .await?;
 
     assert_eq!(status, "WAITING_EMULATOR");
     Ok(())
@@ -240,11 +230,10 @@ async fn manual_pause_starting_while_waiting_blocks_later_claim(
         ClaimResult::DeferredManual(pause_until)
     );
 
-    let status: String =
-        sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
-            .bind(fixture.job_id)
-            .fetch_one(&pool)
-            .await?;
+    let status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+        .bind(fixture.job_id)
+        .fetch_one(&pool)
+        .await?;
     assert_eq!(status, "DEFERRED_MANUAL");
 
     Ok(())
@@ -258,8 +247,16 @@ async fn quiet_period_starting_while_waiting_blocks_later_claim(
     let expected = Utc.with_ymd_and_hms(2026, 9, 21, 15, 0, 0).unwrap();
     let host_id = seed_host(&pool, "quiet", "ONLINE").await?;
     let emulator_id = seed_emulator(&pool, host_id, "quiet", "IDLE").await?;
-    let fixture =
-        seed_bound_job(&pool, emulator_id, "quiet", 1, now, "WAITING_EMULATOR", None).await?;
+    let fixture = seed_bound_job(
+        &pool,
+        emulator_id,
+        "quiet",
+        1,
+        now,
+        "WAITING_EMULATOR",
+        None,
+    )
+    .await?;
 
     add_quiet_period(&pool, fixture.account_id).await?;
 
@@ -270,11 +267,10 @@ async fn quiet_period_starting_while_waiting_blocks_later_claim(
         ClaimResult::DeferredQuiet(expected)
     );
 
-    let status: String =
-        sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
-            .bind(fixture.job_id)
-            .fetch_one(&pool)
-            .await?;
+    let status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+        .bind(fixture.job_id)
+        .fetch_one(&pool)
+        .await?;
     assert_eq!(status, "DEFERRED_QUIET");
 
     Ok(())
