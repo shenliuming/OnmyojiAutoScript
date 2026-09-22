@@ -21,6 +21,7 @@ use crate::{
         upsert_emulator_snapshot,
     },
     enrollment::EnrollmentService,
+    foster_dispatch::FosterDispatchService,
 };
 
 pub async fn ws_handler(
@@ -179,6 +180,19 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                 | AgentEvent::LoginFailed(_)
                             ) => {
                                 if EnrollmentService::new(state.pool.clone())
+                                    .process_agent_event(hello.host_id, &event)
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                            event @ (
+                                AgentEvent::FosterStageChanged(_)
+                                | AgentEvent::FosterSucceeded(_)
+                                | AgentEvent::FosterFailed(_)
+                            ) => {
+                                if FosterDispatchService::new(state.pool.clone())
                                     .process_agent_event(hello.host_id, &event)
                                     .await
                                     .is_err()
