@@ -388,7 +388,7 @@ async fn invalid_quiet_period_does_not_replace_existing_configuration(
         .await;
     assert!(matches!(result, Err(PublicPortalError::InvalidQuietPeriod)));
 
-    let row: (i32, chrono::NaiveTime) = sqlx::query_as(
+    let row: (u8, chrono::NaiveTime) = sqlx::query_as(
         "SELECT weekday_mask, start_time
          FROM foster_quiet_period
          WHERE game_account_id = ?",
