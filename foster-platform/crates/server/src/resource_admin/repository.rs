@@ -34,6 +34,18 @@ pub async fn provider_exists(pool: &MySqlPool, provider_id: i64) -> Result<bool,
     Ok(count == 1)
 }
 
+pub async fn resource_cycle_exists(
+    pool: &MySqlPool,
+    cycle_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(pool)
+            .await?;
+    Ok(count == 1)
+}
+
 pub async fn game_account_exists(
     pool: &MySqlPool,
     game_account_id: i64,
