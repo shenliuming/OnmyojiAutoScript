@@ -166,21 +166,50 @@ pub async fn mark_login_failed(
     session_no: &str,
     reason: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE login_session ls
+    let mut tx = pool.begin().await?;
+
+    let session: Option<(i64, i64, String)> = sqlx::query_as(
+        "SELECT ls.id, ls.binding_id, ls.status
+         FROM login_session ls
          JOIN emulator_instance e ON e.id = ls.emulator_id
-         SET ls.status = 'FAILED',
-             ls.failed_reason = ?
          WHERE ls.session_no = ?
            AND e.host_id = ?
-           AND ls.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+         FOR UPDATE",
     )
-    .bind(reason)
     .bind(session_no)
     .bind(host_id)
-    .execute(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
+    let Some((session_id, binding_id, status)) = session else {
+        tx.commit().await?;
+        return Ok(());
+    };
+
+    if matches!(status.as_str(), "SUCCESS" | "FAILED" | "CANCELLED") {
+        tx.commit().await?;
+        return Ok(());
+    }
+
+    let updated = sqlx::query(
+        "UPDATE login_session
+         SET status = 'FAILED',
+             failed_reason = ?,
+             qr_payload = NULL,
+             qr_expires_at = NULL
+         WHERE id = ?
+           AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+    )
+    .bind(reason)
+    .bind(session_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if updated.rows_affected() == 1 {
+        release_pending_binding_tx(&mut tx, binding_id).await?;
+    }
+
+    tx.commit().await?;
     Ok(())
 }
 
