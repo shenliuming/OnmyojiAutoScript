@@ -6,13 +6,16 @@ use foster_domain::{
     AccountIdentity, DetectedIdentity, IdentityDecision, IdentityType, normalize_identity,
     verify_identity,
 };
-use foster_protocol::AgentEvent;
+use foster_protocol::{AgentEvent, ServerCommand, StartLoginCommand};
 use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
 use uuid::Uuid;
 
-use crate::control_plane::{AllocationError, BindingAllocator};
+use crate::{
+    agent_gateway::registry::AgentRegistry,
+    control_plane::{AllocationError, BindingAllocator},
+};
 
 use super::{
     model::CreatedLoginSession,
@@ -20,9 +23,10 @@ use super::{
         NewLoginSession, TrustedIdentityRow, activate_game_account, activate_pending_binding,
         cancel_login_session_row, complete_login_session, find_expired_login_session_ids,
         insert_enrollment_identity, insert_login_session, load_trusted_identities, lock_binding,
-        lock_game_account, lock_login_session_by_control_hash, lock_login_session_by_id,
-        mark_login_failed, mark_login_identity_detected, mark_login_preparing,
-        mark_login_qr_expired, mark_login_qr_ready, release_pending_binding,
+        lock_game_account, lock_login_dispatch_target, lock_login_session_by_control_hash,
+        lock_login_session_by_id, mark_login_failed, mark_login_identity_detected,
+        mark_login_preparing, mark_login_preparing_after_dispatch, mark_login_qr_expired,
+        mark_login_qr_ready, mark_login_waiting_emulator, release_pending_binding,
         release_pending_binding_tx,
     },
 };
@@ -47,6 +51,13 @@ pub enum EnrollmentError {
     BindingMismatch,
     #[error("game account is already active on another emulator")]
     AccountBindingConflict,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DispatchLoginResult {
+    Dispatched,
+    WaitingEmulator,
+    AlreadyDispatched,
 }
 
 #[derive(Clone)]
@@ -108,6 +119,65 @@ impl EnrollmentService {
         }
 
         Ok(())
+    }
+
+    pub async fn dispatch_login_session(
+        &self,
+        session_no: &str,
+        registry: &AgentRegistry,
+    ) -> Result<DispatchLoginResult, EnrollmentError> {
+        let mut tx = self.pool.begin().await?;
+
+        let target = lock_login_dispatch_target(&mut tx, session_no)
+            .await?
+            .ok_or(EnrollmentError::LoginSessionNotFound)?;
+
+        match target.status.as_str() {
+            "CREATED" | "WAITING_EMULATOR" => {}
+            "PREPARING"
+            | "WAITING_QR"
+            | "QR_READY"
+            | "WAITING_SCAN"
+            | "DETECTING_LOGIN"
+            | "VERIFYING_ACCOUNT"
+            | "SUCCESS" => {
+                tx.commit().await?;
+                return Ok(DispatchLoginResult::AlreadyDispatched);
+            }
+            "FAILED" | "CANCELLED" => {
+                return Err(EnrollmentError::InvalidLoginState);
+            }
+            _ => {
+                return Err(EnrollmentError::InvalidLoginState);
+            }
+        }
+
+        let command = ServerCommand::StartLogin(StartLoginCommand {
+            session_no: target.session_no.clone(),
+            game_account_id: target.game_account_id,
+            emulator_code: target.emulator_code.clone(),
+        });
+
+        let delivered = tokio::time::timeout(
+            Duration::from_secs(5),
+            registry.send_command(target.host_id, command),
+        )
+        .await;
+
+        match delivered {
+            Ok(Ok(())) => {
+                if !mark_login_preparing_after_dispatch(&mut tx, target.id).await? {
+                    return Err(EnrollmentError::InvalidLoginState);
+                }
+                tx.commit().await?;
+                Ok(DispatchLoginResult::Dispatched)
+            }
+            Ok(Err(_)) | Err(_) => {
+                mark_login_waiting_emulator(&mut tx, target.id).await?;
+                tx.commit().await?;
+                Ok(DispatchLoginResult::WaitingEmulator)
+            }
+        }
     }
 
     pub async fn expire_login_sessions(&self) -> Result<usize, EnrollmentError> {
