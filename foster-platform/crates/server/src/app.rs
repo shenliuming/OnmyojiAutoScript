@@ -13,9 +13,7 @@ use crate::{
         sse::login_status_events,
     },
     foster_dispatch::FosterDispatchService,
-    onboarding::{
-        AdminAuthConfig, admin_onboard, login_page, service_page,
-    },
+    onboarding::{AdminAuthConfig, admin_onboard, login_page, service_page},
     public_portal::{clear_pause, get_service_status, pause_service, replace_quiet_periods},
     resource_pool::ResourcePoolService,
     scheduler::SchedulerService,
@@ -33,10 +31,7 @@ pub fn build_app(state: AppState) -> Router {
     build_app_with_admin_token(state, admin_token)
 }
 
-pub fn build_app_with_admin_token(
-    state: AppState,
-    admin_token: Option<String>,
-) -> Router {
+pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) -> Router {
     spawn_stale_sweeper(state.clone());
     spawn_foster_scheduler(state.clone());
 
