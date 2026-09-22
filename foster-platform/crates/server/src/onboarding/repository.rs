@@ -4,13 +4,10 @@ use sqlx::{MySql, MySqlPool, Transaction};
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct OnboardingPlanRow {
     pub id: i64,
-    pub plan_code: String,
-    pub plan_name: String,
     pub daily_target_runs: i32,
     pub interval_minutes: i32,
     pub resource_mode: String,
     pub resource_type: Option<String>,
-    pub status: String,
 }
 
 pub async fn load_active_plan(
@@ -20,13 +17,10 @@ pub async fn load_active_plan(
     sqlx::query_as::<_, OnboardingPlanRow>(
         "SELECT
             id,
-            plan_code,
-            plan_name,
             daily_target_runs,
             interval_minutes,
             resource_mode,
-            resource_type,
-            status
+            resource_type
          FROM foster_plan
          WHERE plan_code = ?
            AND status = 'ACTIVE'",
