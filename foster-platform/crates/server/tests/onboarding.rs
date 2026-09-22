@@ -275,3 +275,55 @@ async fn missing_server_admin_token_fails_closed(pool: MySqlPool) -> anyhow::Res
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     Ok(())
 }
+
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn confirmed_onboarding_login_activates_subscription(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    seed_emulator_capacity(&pool).await?;
+
+    let result = OnboardingService::new(pool.clone())
+        .onboard(request("BASIC_AUTO_FOSTER"), &AgentRegistry::default())
+        .await?;
+
+    let control_token = result
+        .login_url
+        .split("#control=")
+        .nth(1)
+        .ok_or_else(|| anyhow::anyhow!("missing login control token"))?
+        .to_string();
+
+    sqlx::query(
+        "UPDATE login_session
+         SET status = 'VERIFYING_ACCOUNT',
+             detected_character_name = '角色首单',
+             detected_server_name = '春之樱'
+         WHERE game_account_id = (
+             SELECT game_account_id
+             FROM foster_subscription
+             WHERE subscription_no = ?
+         )",
+    )
+    .bind(&result.subscription_no)
+    .execute(&pool)
+    .await?;
+
+    foster_server::enrollment::EnrollmentService::new(pool.clone())
+        .confirm_login_session(&control_token)
+        .await?;
+
+    let row: (String, Option<chrono::NaiveDateTime>) = sqlx::query_as(
+        "SELECT status, next_run_at
+         FROM foster_subscription
+         WHERE subscription_no = ?",
+    )
+    .bind(&result.subscription_no)
+    .fetch_one(&pool)
+    .await?;
+
+    assert_eq!(row.0, "ACTIVE");
+    assert!(row.1.is_some());
+
+    Ok(())
+}
