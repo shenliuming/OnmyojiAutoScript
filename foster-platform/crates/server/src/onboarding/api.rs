@@ -80,9 +80,7 @@ fn status_code(error: OnboardingError) -> StatusCode {
             | crate::enrollment::EnrollmentError::AccountBindingConflict => StatusCode::CONFLICT,
             crate::enrollment::EnrollmentError::Allocation(_)
             | crate::enrollment::EnrollmentError::Database(_)
-            | crate::enrollment::EnrollmentError::InvalidTtl => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            | crate::enrollment::EnrollmentError::InvalidTtl => StatusCode::INTERNAL_SERVER_ERROR,
         },
         OnboardingError::Portal(_) | OnboardingError::Database(_) => {
             StatusCode::INTERNAL_SERVER_ERROR
