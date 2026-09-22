@@ -127,3 +127,26 @@ pub async fn set_job_screenshot_url(
 
     Ok(())
 }
+
+
+pub async fn set_job_waiting_resource(
+    pool: &MySqlPool,
+    job_id: i64,
+    message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = 'WAITING_RESOURCE',
+             error_code = 'PROVIDER_NOT_FOUND',
+             result_message = ?,
+             retry_after = NULL
+         WHERE id = ?
+           AND status IN ('SWITCHING_ACCOUNT', 'WAITING_RESOURCE')",
+    )
+    .bind(message)
+    .bind(job_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
