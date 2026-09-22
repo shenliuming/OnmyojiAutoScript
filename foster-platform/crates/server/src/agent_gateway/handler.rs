@@ -18,7 +18,7 @@ use crate::{
     app::AppState,
     control_plane::repository::{
         host_exists, mark_host_offline, mark_host_online, touch_host_heartbeat,
-        upsert_emulator_snapshot,
+        update_emulator_heartbeats, upsert_emulator_snapshot,
     },
     enrollment::EnrollmentService,
     foster_dispatch::FosterDispatchService,
@@ -149,6 +149,17 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                 if touch_host_heartbeat(&state.pool, hello.host_id)
                                     .await
                                     .is_err()
+                                {
+                                    break;
+                                }
+
+                                if update_emulator_heartbeats(
+                                    &state.pool,
+                                    hello.host_id,
+                                    &heartbeat.emulators,
+                                )
+                                .await
+                                .is_err()
                                 {
                                     break;
                                 }
