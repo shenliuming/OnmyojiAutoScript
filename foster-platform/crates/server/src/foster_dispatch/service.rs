@@ -17,8 +17,8 @@ use crate::{
 
 use super::repository::{
     FosterDispatchTargetRow, FosterIdentityRow, current_job_retry_count, current_job_status,
-    job_belongs_to_host,
-    load_dispatch_target, load_identity_rows, set_job_screenshot_url, set_job_waiting_resource,
+    job_belongs_to_host, load_dispatch_target, load_identity_rows, set_job_screenshot_url,
+    set_job_waiting_resource,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -276,36 +276,24 @@ impl FosterDispatchService {
                     event.completed_at,
                 )
                 .await?;
-            set_job_screenshot_url(
-                &self.pool,
-                event.job_id,
-                event.screenshot_url.as_deref(),
-            )
-            .await?;
+            set_job_screenshot_url(&self.pool, event.job_id, event.screenshot_url.as_deref())
+                .await?;
             return Ok(());
         }
 
-        self.ensure_running(event.job_id, event.completed_at).await?;
+        self.ensure_running(event.job_id, event.completed_at)
+            .await?;
 
         let current = current_job_status(&self.pool, event.job_id)
             .await?
             .unwrap_or_default();
         if current == "RUNNING" {
             self.scheduler
-                .complete_success(
-                    event.job_id,
-                    event.completed_at,
-                    event.remaining_seconds,
-                )
+                .complete_success(event.job_id, event.completed_at, event.remaining_seconds)
                 .await?;
         }
 
-        set_job_screenshot_url(
-            &self.pool,
-            event.job_id,
-            event.screenshot_url.as_deref(),
-        )
-        .await?;
+        set_job_screenshot_url(&self.pool, event.job_id, event.screenshot_url.as_deref()).await?;
 
         Ok(())
     }
@@ -346,12 +334,7 @@ impl FosterDispatchService {
             )
             .await?;
 
-        set_job_screenshot_url(
-            &self.pool,
-            event.job_id,
-            event.screenshot_url.as_deref(),
-        )
-        .await?;
+        set_job_screenshot_url(&self.pool, event.job_id, event.screenshot_url.as_deref()).await?;
 
         Ok(())
     }
@@ -408,7 +391,9 @@ fn parse_resource_mode(value: &str) -> Result<ResourceMode, FosterDispatchError>
     match value {
         "USER_FRIEND" => Ok(ResourceMode::UserFriend),
         "PLATFORM" => Ok(ResourceMode::Platform),
-        other => Err(FosterDispatchError::UnsupportedResourceMode(other.to_string())),
+        other => Err(FosterDispatchError::UnsupportedResourceMode(
+            other.to_string(),
+        )),
     }
 }
 
@@ -416,7 +401,9 @@ fn parse_resource_type(value: &str) -> Result<ResourceType, FosterDispatchError>
     match value {
         "FISH" | "DOUYU" => Ok(ResourceType::Fish),
         "TAIKO_JADE" | "JADE" | "TAIKO" => Ok(ResourceType::TaikoJade),
-        other => Err(FosterDispatchError::UnsupportedResourceType(other.to_string())),
+        other => Err(FosterDispatchError::UnsupportedResourceType(
+            other.to_string(),
+        )),
     }
 }
 
