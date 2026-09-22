@@ -11,7 +11,7 @@ use crate::control_plane::{AllocationError, BindingAllocator};
 
 use super::{
     model::CreatedLoginSession,
-    repository::{insert_login_session, release_pending_binding},
+    repository::{NewLoginSession, insert_login_session, release_pending_binding},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -56,13 +56,15 @@ impl EnrollmentService {
 
         let session_id = match insert_login_session(
             &self.pool,
-            &session_no,
-            game_account_id,
-            binding.binding_id,
-            binding.emulator_id,
-            &public_token_hash,
-            &control_token_hash,
-            expires_at,
+            NewLoginSession {
+                session_no: &session_no,
+                game_account_id,
+                binding_id: binding.binding_id,
+                emulator_id: binding.emulator_id,
+                public_token_hash: &public_token_hash,
+                control_token_hash: &control_token_hash,
+                expires_at,
+            },
         )
         .await
         {

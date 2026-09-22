@@ -1,15 +1,19 @@
 use chrono::{DateTime, Utc};
 use sqlx::MySqlPool;
 
+pub struct NewLoginSession<'a> {
+    pub session_no: &'a str,
+    pub game_account_id: i64,
+    pub binding_id: i64,
+    pub emulator_id: i64,
+    pub public_token_hash: &'a str,
+    pub control_token_hash: &'a str,
+    pub expires_at: DateTime<Utc>,
+}
+
 pub async fn insert_login_session(
     pool: &MySqlPool,
-    session_no: &str,
-    game_account_id: i64,
-    binding_id: i64,
-    emulator_id: i64,
-    public_token_hash: &str,
-    control_token_hash: &str,
-    expires_at: DateTime<Utc>,
+    session: NewLoginSession<'_>,
 ) -> Result<i64, sqlx::Error> {
     let result = sqlx::query(
         "INSERT INTO login_session(
@@ -24,13 +28,13 @@ pub async fn insert_login_session(
          )
          VALUES (?, ?, ?, ?, 'CREATED', ?, ?, ?)",
     )
-    .bind(session_no)
-    .bind(game_account_id)
-    .bind(binding_id)
-    .bind(emulator_id)
-    .bind(public_token_hash)
-    .bind(control_token_hash)
-    .bind(expires_at.naive_utc())
+    .bind(session.session_no)
+    .bind(session.game_account_id)
+    .bind(session.binding_id)
+    .bind(session.emulator_id)
+    .bind(session.public_token_hash)
+    .bind(session.control_token_hash)
+    .bind(session.expires_at.naive_utc())
     .execute(pool)
     .await?;
 
