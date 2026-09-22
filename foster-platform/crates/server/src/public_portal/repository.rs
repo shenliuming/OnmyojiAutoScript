@@ -11,7 +11,6 @@ pub struct ShareLinkRow {
 
 #[derive(Debug, Clone, FromRow)]
 pub struct PortalSubscriptionRow {
-    pub subscription_id: i64,
     pub subscription_no: String,
     pub service_status: String,
     pub game_account_id: i64,
@@ -143,7 +142,6 @@ pub async fn load_portal_subscription(
 ) -> Result<Option<PortalSubscriptionRow>, sqlx::Error> {
     sqlx::query_as::<_, PortalSubscriptionRow>(
         "SELECT
-            s.id AS subscription_id,
             s.subscription_no,
             s.status AS service_status,
             s.game_account_id,
