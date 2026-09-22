@@ -128,7 +128,6 @@ pub async fn set_job_screenshot_url(
     Ok(())
 }
 
-
 pub async fn set_job_waiting_resource(
     pool: &MySqlPool,
     job_id: i64,
@@ -150,7 +149,6 @@ pub async fn set_job_waiting_resource(
 
     Ok(())
 }
-
 
 pub async fn current_job_retry_count(
     pool: &MySqlPool,
