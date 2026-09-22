@@ -2,6 +2,7 @@ use std::{fmt::Write as _, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
+use foster_protocol::AgentEvent;
 use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
@@ -11,7 +12,11 @@ use crate::control_plane::{AllocationError, BindingAllocator};
 
 use super::{
     model::CreatedLoginSession,
-    repository::{NewLoginSession, insert_login_session, release_pending_binding},
+    repository::{
+        NewLoginSession, insert_login_session, mark_login_failed,
+        mark_login_identity_detected, mark_login_preparing, mark_login_qr_expired,
+        mark_login_qr_ready, release_pending_binding,
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +41,53 @@ impl EnrollmentService {
             allocator: BindingAllocator::new(pool.clone()),
             pool,
         }
+    }
+
+    pub async fn process_agent_event(
+        &self,
+        host_id: i64,
+        event: &AgentEvent,
+    ) -> Result<(), EnrollmentError> {
+        match event {
+            AgentEvent::LoginPreparing(event) => {
+                mark_login_preparing(&self.pool, host_id, &event.session_no).await?;
+            }
+            AgentEvent::LoginQrReady(event) => {
+                mark_login_qr_ready(
+                    &self.pool,
+                    host_id,
+                    &event.session_no,
+                    &event.qr_payload,
+                    event.expires_at,
+                )
+                .await?;
+            }
+            AgentEvent::LoginQrExpired(event) => {
+                mark_login_qr_expired(&self.pool, host_id, &event.session_no).await?;
+            }
+            AgentEvent::LoginIdentityDetected(event) => {
+                mark_login_identity_detected(
+                    &self.pool,
+                    host_id,
+                    &event.session_no,
+                    event.masked_account.as_deref(),
+                    event.character_name.as_deref(),
+                    event.server_name.as_deref(),
+                    event.game_uid.as_deref(),
+                )
+                .await?;
+            }
+            AgentEvent::LoginFailed(event) => {
+                let reason = format!("{}: {}", event.code, event.message);
+                mark_login_failed(&self.pool, host_id, &event.session_no, &reason).await?;
+            }
+            AgentEvent::Hello(_)
+            | AgentEvent::Heartbeat(_)
+            | AgentEvent::EmulatorSnapshot(_)
+            | AgentEvent::Pong(_) => {}
+        }
+
+        Ok(())
     }
 
     pub async fn create_login_session(
