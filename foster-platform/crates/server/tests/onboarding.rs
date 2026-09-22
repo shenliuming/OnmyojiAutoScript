@@ -8,9 +8,7 @@ use foster_server::{
     agent_gateway::registry::AgentRegistry,
     app::{AppState, build_app_with_admin_token},
     config::AgentGatewayConfig,
-    onboarding::{
-        OnboardCustomerRequest, OnboardingError, OnboardingService,
-    },
+    onboarding::{OnboardCustomerRequest, OnboardingError, OnboardingService},
 };
 use serde_json::Value;
 use sqlx::MySqlPool;
@@ -81,9 +79,11 @@ async fn default_mvp_plans_exist(pool: MySqlPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(plans.len(), 3);
-    assert!(plans.iter().any(|row| {
-        row.0 == "BASIC_AUTO_FOSTER" && row.1 == "USER_FRIEND" && row.2.is_none()
-    }));
+    assert!(
+        plans.iter().any(|row| {
+            row.0 == "BASIC_AUTO_FOSTER" && row.1 == "USER_FRIEND" && row.2.is_none()
+        })
+    );
     assert!(plans.iter().any(|row| {
         row.0 == "PLATFORM_FISH" && row.1 == "PLATFORM" && row.2.as_deref() == Some("FISH")
     }));
@@ -157,10 +157,9 @@ async fn unknown_plan_is_rejected_without_orphan_account(pool: MySqlPool) -> any
     let account_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM game_account")
         .fetch_one(&pool)
         .await?;
-    let subscription_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM foster_subscription")
-            .fetch_one(&pool)
-            .await?;
+    let subscription_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM foster_subscription")
+        .fetch_one(&pool)
+        .await?;
     assert_eq!(account_count, 0);
     assert_eq!(subscription_count, 0);
 
@@ -243,7 +242,12 @@ async fn admin_onboard_requires_configured_bearer_token(pool: MySqlPool) -> anyh
     let json = json_body(ok).await?;
     assert!(json["subscriptionNo"].as_str().is_some());
     assert!(json["loginUrl"].as_str().unwrap().starts_with("/login/"));
-    assert!(json["serviceUrl"].as_str().unwrap().starts_with("/service/"));
+    assert!(
+        json["serviceUrl"]
+            .as_str()
+            .unwrap()
+            .starts_with("/service/")
+    );
 
     Ok(())
 }
@@ -276,11 +280,8 @@ async fn missing_server_admin_token_fails_closed(pool: MySqlPool) -> anyhow::Res
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
-async fn confirmed_onboarding_login_activates_subscription(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn confirmed_onboarding_login_activates_subscription(pool: MySqlPool) -> anyhow::Result<()> {
     seed_emulator_capacity(&pool).await?;
 
     let result = OnboardingService::new(pool.clone())
