@@ -90,6 +90,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
 
         self.send_hello(&mut socket).await?;
         self.send_snapshot(&mut socket).await?;
+        self.send_heartbeat(&mut socket).await?;
 
         let mut heartbeat = tokio::time::interval(self.config.heartbeat_interval);
         heartbeat.tick().await;
