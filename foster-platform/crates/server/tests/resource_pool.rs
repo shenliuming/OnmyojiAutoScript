@@ -1,7 +1,5 @@
 use chrono::{TimeZone, Utc};
-use foster_server::resource_pool::{
-    ReserveForJobResult, ResourcePoolService,
-};
+use foster_server::resource_pool::{ReserveForJobResult, ResourcePoolService};
 use sqlx::MySqlPool;
 
 struct JobFixture {
@@ -203,15 +201,8 @@ async fn earliest_expiry_then_fuller_cycle_wins(pool: MySqlPool) -> anyhow::Resu
     let now = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
     let job = seed_platform_job(&pool, "ORDER", 1003).await?;
 
-    let (provider_late, _) = seed_provider_cycle(
-        &pool,
-        "LATE",
-        now,
-        now + chrono::Duration::hours(9),
-        3,
-        2,
-    )
-    .await?;
+    let (provider_late, _) =
+        seed_provider_cycle(&pool, "LATE", now, now + chrono::Duration::hours(9), 3, 2).await?;
     let (provider_early_a, _) = seed_provider_cycle(
         &pool,
         "EARLY-A",
@@ -252,15 +243,8 @@ async fn earliest_expiry_then_fuller_cycle_wins(pool: MySqlPool) -> anyhow::Resu
 async fn repeated_reserve_for_same_job_is_idempotent(pool: MySqlPool) -> anyhow::Result<()> {
     let now = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
     let job = seed_platform_job(&pool, "IDEMP", 1004).await?;
-    let (provider_id, cycle_id) = seed_provider_cycle(
-        &pool,
-        "IDEMP",
-        now,
-        now + chrono::Duration::hours(8),
-        2,
-        0,
-    )
-    .await?;
+    let (provider_id, cycle_id) =
+        seed_provider_cycle(&pool, "IDEMP", now, now + chrono::Duration::hours(8), 2, 0).await?;
     bind_friend(&pool, job.account_id, provider_id, "VERIFIED").await?;
 
     let service = ResourcePoolService::new(pool.clone());
@@ -284,15 +268,8 @@ async fn concurrent_reservations_do_not_oversell_one_slot(pool: MySqlPool) -> an
     let now = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
     let job_a = seed_platform_job(&pool, "CONC-A", 1005).await?;
     let job_b = seed_platform_job(&pool, "CONC-B", 1006).await?;
-    let (provider_id, cycle_id) = seed_provider_cycle(
-        &pool,
-        "CONC",
-        now,
-        now + chrono::Duration::hours(8),
-        1,
-        0,
-    )
-    .await?;
+    let (provider_id, cycle_id) =
+        seed_provider_cycle(&pool, "CONC", now, now + chrono::Duration::hours(8), 1, 0).await?;
 
     bind_friend(&pool, job_a.account_id, provider_id, "VERIFIED").await?;
     bind_friend(&pool, job_b.account_id, provider_id, "VERIFIED").await?;
@@ -355,12 +332,11 @@ async fn release_is_idempotent_and_reopens_full_cycle(pool: MySqlPool) -> anyhow
     assert!(first.is_some());
     assert!(second.is_none());
 
-    let cycle: (i32, String) = sqlx::query_as(
-        "SELECT occupied_slots, status FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let cycle: (i32, String) =
+        sqlx::query_as("SELECT occupied_slots, status FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(cycle.0, 0);
     assert_eq!(cycle.1, "AVAILABLE");
 
@@ -371,42 +347,29 @@ async fn release_is_idempotent_and_reopens_full_cycle(pool: MySqlPool) -> anyhow
 async fn confirmed_allocation_expires_and_frees_slot(pool: MySqlPool) -> anyhow::Result<()> {
     let now = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
     let job = seed_platform_job(&pool, "REAP", 1008).await?;
-    let (provider_id, cycle_id) = seed_provider_cycle(
-        &pool,
-        "REAP",
-        now,
-        now + chrono::Duration::hours(8),
-        1,
-        0,
-    )
-    .await?;
+    let (provider_id, cycle_id) =
+        seed_provider_cycle(&pool, "REAP", now, now + chrono::Duration::hours(8), 1, 0).await?;
     bind_friend(&pool, job.account_id, provider_id, "VERIFIED").await?;
 
     let service = ResourcePoolService::new(pool.clone());
     service.reserve_for_job(job.job_id, now).await?;
-    assert!(
-        service
-            .confirm_for_job(job.job_id, now, Some(60))
-            .await?
-    );
+    assert!(service.confirm_for_job(job.job_id, now, Some(60)).await?);
 
     let report = service.reap(now + chrono::Duration::seconds(61)).await?;
     assert_eq!(report.expired_allocations, 1);
 
-    let allocation_status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_resource_allocation WHERE job_id = ?",
-    )
-    .bind(job.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let allocation_status: String =
+        sqlx::query_scalar("SELECT status FROM foster_resource_allocation WHERE job_id = ?")
+            .bind(job.job_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(allocation_status, "EXPIRED");
 
-    let cycle: (i32, String) = sqlx::query_as(
-        "SELECT occupied_slots, status FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let cycle: (i32, String) =
+        sqlx::query_as("SELECT occupied_slots, status FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(cycle.0, 0);
     assert_eq!(cycle.1, "AVAILABLE");
 
