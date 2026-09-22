@@ -22,4 +22,5 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
 anyhow.workspace = true
