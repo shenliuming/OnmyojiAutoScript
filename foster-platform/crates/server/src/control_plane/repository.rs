@@ -213,7 +213,6 @@ pub async fn insert_pending_binding(
     Ok(result.last_insert_id() as i64)
 }
 
-
 pub async fn update_emulator_heartbeats(
     pool: &MySqlPool,
     host_id: i64,
