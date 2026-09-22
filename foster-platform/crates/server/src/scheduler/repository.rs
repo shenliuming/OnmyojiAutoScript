@@ -401,3 +401,40 @@ pub async fn set_job_switching_account(
 
     Ok(())
 }
+
+
+pub async fn transition_job_status(
+    pool: &MySqlPool,
+    job_id: i64,
+    expected_status: &str,
+    next_status: &str,
+    now: DateTime<Utc>,
+    next_is_executing: bool,
+    next_is_terminal: bool,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE foster_job
+         SET status = ?,
+             started_at = CASE
+                 WHEN ? THEN COALESCE(started_at, ?)
+                 ELSE started_at
+             END,
+             finished_at = CASE
+                 WHEN ? THEN ?
+                 ELSE finished_at
+             END
+         WHERE id = ?
+           AND status = ?",
+    )
+    .bind(next_status)
+    .bind(next_is_executing)
+    .bind(now.naive_utc())
+    .bind(next_is_terminal)
+    .bind(now.naive_utc())
+    .bind(job_id)
+    .bind(expected_status)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() == 1)
+}
