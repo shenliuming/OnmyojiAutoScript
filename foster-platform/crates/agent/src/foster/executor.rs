@@ -1,9 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use foster_domain::FosterErrorCode;
-use foster_protocol::{
-    ExecuteFosterCommand, FosterDetectedIdentity, FosterStage,
-};
+use foster_protocol::{ExecuteFosterCommand, FosterDetectedIdentity, FosterStage};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FosterStageCheckpoint {
