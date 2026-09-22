@@ -576,7 +576,6 @@ pub async fn mark_login_preparing_after_dispatch(
     Ok(result.rows_affected() == 1)
 }
 
-
 pub async fn activate_pending_subscriptions(
     tx: &mut Transaction<'_, MySql>,
     game_account_id: i64,
