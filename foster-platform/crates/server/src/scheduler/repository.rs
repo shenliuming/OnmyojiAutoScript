@@ -246,3 +246,159 @@ pub async fn resume_job_pending(
 
     Ok(())
 }
+
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct ClaimJobRow {
+    pub id: i64,
+    pub status: String,
+    pub game_account_id: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct ActiveBindingRow {
+    pub emulator_id: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct EmulatorClaimRow {
+    pub id: i64,
+    pub emulator_status: String,
+    pub host_status: String,
+}
+
+pub async fn lock_job_for_claim(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+) -> Result<Option<ClaimJobRow>, sqlx::Error> {
+    sqlx::query_as::<_, ClaimJobRow>(
+        "SELECT id, status, game_account_id
+         FROM foster_job
+         WHERE id = ?
+         FOR UPDATE",
+    )
+    .bind(job_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn lock_active_binding_for_account(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+) -> Result<Option<ActiveBindingRow>, sqlx::Error> {
+    sqlx::query_as::<_, ActiveBindingRow>(
+        "SELECT b.emulator_id
+         FROM game_account a
+         JOIN emulator_account_binding b
+           ON b.game_account_id = a.id
+          AND b.status = 'ACTIVE'
+          AND b.emulator_id = a.active_emulator_id
+         WHERE a.id = ?
+         FOR UPDATE",
+    )
+    .bind(game_account_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn lock_emulator_for_claim(
+    tx: &mut Transaction<'_, MySql>,
+    emulator_id: i64,
+) -> Result<Option<EmulatorClaimRow>, sqlx::Error> {
+    sqlx::query_as::<_, EmulatorClaimRow>(
+        "SELECT
+            e.id,
+            e.status AS emulator_status,
+            h.status AS host_status
+         FROM emulator_instance e
+         JOIN host h ON h.id = e.host_id
+         WHERE e.id = ?
+         FOR UPDATE",
+    )
+    .bind(emulator_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn has_executing_job_for_emulator(
+    tx: &mut Transaction<'_, MySql>,
+    emulator_id: i64,
+    excluding_job_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM foster_job
+         WHERE emulator_id = ?
+           AND id <> ?
+           AND status IN ('SWITCHING_ACCOUNT', 'VERIFYING_ACCOUNT', 'RUNNING')",
+    )
+    .bind(emulator_id)
+    .bind(excluding_job_id)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    Ok(count > 0)
+}
+
+pub async fn has_executing_job_for_account(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+    excluding_job_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM foster_job
+         WHERE game_account_id = ?
+           AND id <> ?
+           AND status IN ('SWITCHING_ACCOUNT', 'VERIFYING_ACCOUNT', 'RUNNING')",
+    )
+    .bind(game_account_id)
+    .bind(excluding_job_id)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    Ok(count > 0)
+}
+
+pub async fn set_job_waiting_emulator(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+    emulator_id: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = 'WAITING_EMULATOR',
+             emulator_id = ?,
+             deferred_until = NULL
+         WHERE id = ?",
+    )
+    .bind(emulator_id)
+    .bind(job_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_job_switching_account(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+    emulator_id: i64,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = 'SWITCHING_ACCOUNT',
+             emulator_id = ?,
+             started_at = COALESCE(started_at, ?),
+             deferred_until = NULL
+         WHERE id = ?",
+    )
+    .bind(emulator_id)
+    .bind(now.naive_utc())
+    .bind(job_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
