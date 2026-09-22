@@ -259,6 +259,13 @@ async fn pause_only_extends_until_explicitly_cleared_and_scheduler_defers(
     .await?;
     assert!(stored_pause.is_none());
 
+    let job_status: String =
+        sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(job_status, "PENDING");
+
     Ok(())
 }
 
@@ -336,6 +343,13 @@ async fn quiet_periods_replace_atomically_and_feed_scheduler_gate(
     .fetch_one(&pool)
     .await?;
     assert_eq!(count, 1);
+
+    let job_status: String =
+        sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(job_status, "PENDING");
 
     Ok(())
 }
