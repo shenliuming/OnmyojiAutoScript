@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Datelike, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveTime, TimeZone, Utc};
 use chrono_tz::Asia::Shanghai;
 use foster_domain::{QuietWindow, ScheduleGate, evaluate_quiet_periods};
 use rand::RngCore;
