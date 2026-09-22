@@ -1,8 +1,9 @@
 use std::time::Duration;
 
+use foster_domain::EmulatorStatus;
 use foster_protocol::{
-    AgentEnvelope, AgentEvent, AgentHello, EmulatorDescriptor, EmulatorSnapshot, Heartbeat,
-    PROTOCOL_VERSION,
+    AgentEnvelope, AgentEvent, AgentHello, EmulatorDescriptor, EmulatorHeartbeat,
+    EmulatorSnapshot, Heartbeat, PROTOCOL_VERSION,
 };
 use foster_server::{
     agent_gateway::registry::AgentRegistry,
@@ -317,6 +318,97 @@ async fn emulator_snapshot_preserves_server_controlled_fields(
                     if driver == "FAKE"
                         && adb == "new-adb"
                         && job == "job-1"
+            )
+        })
+        .await
+    );
+
+    Ok(())
+}
+
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn heartbeat_updates_emulator_status(pool: MySqlPool) -> anyhow::Result<()> {
+    seed_host(&pool, 7).await?;
+    sqlx::query(
+        "INSERT INTO emulator_instance(
+            host_id, emulator_code, driver_type, max_account_count,
+            status, adb_serial
+         )
+         VALUES (7, 'emu-status', 'ADB', 5, 'IDLE', '127.0.0.1:5555')",
+    )
+    .execute(&pool)
+    .await?;
+
+    let address = spawn_app(pool.clone()).await?;
+    let mut socket = connect(address).await?;
+    send_hello(&mut socket, 7).await?;
+
+    send_event(
+        &mut socket,
+        AgentEvent::Heartbeat(Heartbeat {
+            host_id: 7,
+            emulators: vec![EmulatorHeartbeat {
+                emulator_code: "emu-status".into(),
+                status: EmulatorStatus::Offline,
+            }],
+        }),
+    )
+    .await?;
+
+    assert!(
+        wait_until(Duration::from_secs(1), async || {
+            sqlx::query_scalar::<_, String>(
+                "SELECT status FROM emulator_instance
+                 WHERE emulator_code = 'emu-status'",
+            )
+            .fetch_one(&pool)
+            .await
+            .is_ok_and(|status| status == "OFFLINE")
+        })
+        .await
+    );
+
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn closing_host_marks_emulators_offline(pool: MySqlPool) -> anyhow::Result<()> {
+    seed_host(&pool, 7).await?;
+    sqlx::query(
+        "INSERT INTO emulator_instance(
+            host_id, emulator_code, driver_type, max_account_count,
+            status, adb_serial
+         )
+         VALUES (7, 'emu-close', 'ADB', 5, 'IDLE', '127.0.0.1:5556')",
+    )
+    .execute(&pool)
+    .await?;
+
+    let address = spawn_app(pool.clone()).await?;
+    let mut socket = connect(address).await?;
+    send_hello(&mut socket, 7).await?;
+    socket.close(None).await?;
+
+    assert!(
+        wait_until(Duration::from_secs(1), async || {
+            let row: Option<(String, String)> = sqlx::query_as(
+                "SELECT h.status, e.status
+                 FROM host h
+                 JOIN emulator_instance e ON e.host_id = h.id
+                 WHERE h.id = 7
+                   AND e.emulator_code = 'emu-close'",
+            )
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten();
+
+            matches!(
+                row,
+                Some((host_status, emulator_status))
+                    if host_status == "OFFLINE"
+                        && emulator_status == "OFFLINE"
             )
         })
         .await
