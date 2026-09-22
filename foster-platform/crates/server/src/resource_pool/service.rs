@@ -18,6 +18,8 @@ pub enum ResourcePoolError {
     JobNotFound,
     #[error("job is not a PLATFORM foster job")]
     NotPlatformJob,
+    #[error("job is not ready for resource allocation: {0}")]
+    InvalidJobState(String),
     #[error("PLATFORM subscription has no resource type")]
     MissingResourceType,
     #[error("unsupported resource type: {0}")]
@@ -89,6 +91,9 @@ impl ResourcePoolService {
 
         if parse_resource_mode(&job.resource_mode) != ResourceMode::Platform {
             return Err(ResourcePoolError::NotPlatformJob);
+        }
+        if job.status != "SWITCHING_ACCOUNT" {
+            return Err(ResourcePoolError::InvalidJobState(job.status));
         }
 
         if let Some(allocation) = load_live_allocation(&mut tx, job_id).await? {
