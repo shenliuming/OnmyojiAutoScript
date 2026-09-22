@@ -1,11 +1,13 @@
 use foster_domain::FosterErrorCode;
-use foster_protocol::{
-    AgentEvent, FosterFailed, FosterStageChanged, FosterSucceeded,
-};
+use foster_protocol::{AgentEvent, FosterFailed, FosterStageChanged, FosterSucceeded};
 
 use super::FosterExecution;
 
-pub fn events_for_execution(job_id: i64, attempt: i32, execution: FosterExecution) -> Vec<AgentEvent> {
+pub fn events_for_execution(
+    job_id: i64,
+    attempt: i32,
+    execution: FosterExecution,
+) -> Vec<AgentEvent> {
     let mut events = Vec::with_capacity(execution.stages.len() + 1);
 
     for checkpoint in execution.stages {
