@@ -362,7 +362,9 @@ async fn emulator_contention_leaves_second_job_waiting(pool: MySqlPool) -> anyho
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn waiting_resource_job_can_be_claimed_again(pool: MySqlPool) -> anyhow::Result<()> {
+async fn waiting_resource_job_is_only_reclaimed_after_retry_after(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
     let (_, emulator_id) = seed_host_emulator(&pool).await?;
     let plan_id = seed_plan(&pool).await?;
     let now = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
@@ -378,6 +380,7 @@ async fn waiting_resource_job_can_be_claimed_again(pool: MySqlPool) -> anyhow::R
     )
     .await?;
 
+    let retry_after = now + chrono::Duration::seconds(60);
     let job_id = insert_job(
         &pool,
         "JOB-WAITING-RESOURCE",
@@ -385,14 +388,17 @@ async fn waiting_resource_job_can_be_claimed_again(pool: MySqlPool) -> anyhow::R
         "WAITING_RESOURCE",
         now - chrono::Duration::minutes(10),
         None,
-        None,
+        Some(retry_after),
     )
     .await?;
 
     let scheduler = SchedulerService::new(pool.clone());
-    let report = scheduler.run_once(now).await?;
 
-    assert_eq!(report.claimed_job_ids, vec![job_id]);
+    let early = scheduler.run_once(now).await?;
+    assert!(early.claimed_job_ids.is_empty());
+
+    let due = scheduler.run_once(retry_after).await?;
+    assert_eq!(due.claimed_job_ids, vec![job_id]);
 
     let status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
         .bind(job_id)
