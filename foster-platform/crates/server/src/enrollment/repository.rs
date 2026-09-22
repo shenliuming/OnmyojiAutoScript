@@ -481,7 +481,6 @@ pub async fn release_pending_binding_tx(
     Ok(result.rows_affected() == 1)
 }
 
-
 #[derive(Debug, sqlx::FromRow)]
 pub struct LoginDispatchTarget {
     pub id: i64,
