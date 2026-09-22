@@ -167,9 +167,7 @@ async fn expired_qr_payload_is_not_exposed(pool: MySqlPool) -> anyhow::Result<()
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn public_status_never_exposes_masked_account_or_uid(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn public_status_never_exposes_masked_account_or_uid(pool: MySqlPool) -> anyhow::Result<()> {
     let (_service, session_no, public_token) = seed_fixture(&pool).await?;
 
     sqlx::query(
