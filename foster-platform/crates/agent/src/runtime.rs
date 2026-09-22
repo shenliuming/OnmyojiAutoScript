@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::{
     config::AgentConfig,
     emulator::{EmulatorDriver, EmulatorDriverError},
+    foster::{FosterExecutor, FosterExecutorError, events_for_execution},
     login::{LoginExecutor, LoginExecutorError},
     ws::{AgentWebSocket, WsClientError, connect},
 };
@@ -32,12 +33,15 @@ pub enum AgentRuntimeError {
     Driver(#[from] EmulatorDriverError),
     #[error(transparent)]
     LoginExecutor(#[from] LoginExecutorError),
+    #[error(transparent)]
+    FosterExecutor(#[from] FosterExecutorError),
 }
 
 pub struct AgentRuntime<D: EmulatorDriver> {
     config: AgentConfig,
     driver: Arc<D>,
     login_executor: Option<Arc<dyn LoginExecutor>>,
+    foster_executor: Option<Arc<dyn FosterExecutor>>,
 }
 
 impl<D: EmulatorDriver> AgentRuntime<D> {
@@ -46,11 +50,17 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             config,
             driver: Arc::new(driver),
             login_executor: None,
+            foster_executor: None,
         }
     }
 
     pub fn with_login_executor<E: LoginExecutor>(mut self, executor: E) -> Self {
         self.login_executor = Some(Arc::new(executor));
+        self
+    }
+
+    pub fn with_foster_executor<E: FosterExecutor>(mut self, executor: E) -> Self {
+        self.foster_executor = Some(Arc::new(executor));
         self
     }
 
@@ -142,6 +152,39 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                     executor.cancel(&command.session_no).await?;
                 }
             }
+            ServerCommand::ExecuteFoster(command) => {
+                self.handle_execute_foster(socket, command).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_execute_foster(
+        &self,
+        socket: &mut AgentWebSocket,
+        command: foster_protocol::ExecuteFosterCommand,
+    ) -> Result<(), AgentRuntimeError> {
+        let Some(executor) = &self.foster_executor else {
+            self.send_event(
+                socket,
+                AgentEvent::FosterFailed(foster_protocol::FosterFailed {
+                    job_id: command.job_id,
+                    failed_at: chrono::Utc::now(),
+                    error_code: foster_domain::FosterErrorCode::EmulatorOffline,
+                    message: "foster executor is not configured".to_string(),
+                    screenshot_url: None,
+                }),
+            )
+            .await?;
+            return Ok(());
+        };
+
+        let job_id = command.job_id;
+        let execution = executor.execute(&command).await?;
+
+        for event in events_for_execution(job_id, execution) {
+            self.send_event(socket, event).await?;
         }
 
         Ok(())
@@ -224,6 +267,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 capabilities: vec![
                     "EMULATOR_DISCOVERY".to_string(),
                     "LOGIN_EXECUTION".to_string(),
+                    "FOSTER_EXECUTION".to_string(),
                 ],
             }),
         )
