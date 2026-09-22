@@ -17,7 +17,6 @@ impl AgentGatewayConfig {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub database_url: String,
