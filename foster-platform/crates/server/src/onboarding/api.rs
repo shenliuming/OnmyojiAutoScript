@@ -48,7 +48,7 @@ pub async fn admin_onboard(
         .map_err(status_code)
 }
 
-fn authorize_admin(config: &AdminAuthConfig, headers: &HeaderMap) -> Result<(), StatusCode> {
+pub(crate) fn authorize_admin(config: &AdminAuthConfig, headers: &HeaderMap) -> Result<(), StatusCode> {
     let Some(expected) = config.token.as_deref().filter(|value| !value.is_empty()) else {
         return Err(StatusCode::SERVICE_UNAVAILABLE);
     };
