@@ -6,6 +6,7 @@ pub mod identity;
 pub mod job;
 pub mod login;
 pub mod quiet;
+pub mod resource;
 pub mod subscription;
 
 pub use account::*;
@@ -16,4 +17,5 @@ pub use identity::*;
 pub use job::*;
 pub use login::*;
 pub use quiet::*;
+pub use resource::*;
 pub use subscription::*;
