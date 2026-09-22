@@ -17,11 +17,7 @@ async fn seed_host(pool: &MySqlPool) -> anyhow::Result<i64> {
     Ok(result.last_insert_id() as i64)
 }
 
-async fn seed_emulator(
-    pool: &MySqlPool,
-    host_id: i64,
-    capacity: i32,
-) -> anyhow::Result<i64> {
+async fn seed_emulator(pool: &MySqlPool, host_id: i64, capacity: i32) -> anyhow::Result<i64> {
     let result = sqlx::query(
         "INSERT INTO emulator_instance(
             host_id, emulator_code, driver_type,
@@ -37,10 +33,7 @@ async fn seed_emulator(
     Ok(result.last_insert_id() as i64)
 }
 
-async fn seed_account(
-    pool: &MySqlPool,
-    customer_id: i64,
-) -> anyhow::Result<i64> {
+async fn seed_account(pool: &MySqlPool, customer_id: i64) -> anyhow::Result<i64> {
     let result = sqlx::query(
         "INSERT INTO game_account(
             customer_id, login_status, verify_status
@@ -55,9 +48,7 @@ async fn seed_account(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn created_session_stores_only_token_hashes(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn created_session_stores_only_token_hashes(pool: MySqlPool) -> anyhow::Result<()> {
     let host_id = seed_host(&pool).await?;
     seed_emulator(&pool, host_id, 2).await?;
     let account_id = seed_account(&pool, 1001).await?;
@@ -99,9 +90,7 @@ async fn created_session_stores_only_token_hashes(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn pending_login_session_consumes_emulator_capacity(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn pending_login_session_consumes_emulator_capacity(pool: MySqlPool) -> anyhow::Result<()> {
     let host_id = seed_host(&pool).await?;
     seed_emulator(&pool, host_id, 1).await?;
     let account_a = seed_account(&pool, 1001).await?;
@@ -125,9 +114,7 @@ async fn pending_login_session_consumes_emulator_capacity(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn same_account_cannot_create_second_login_session(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn same_account_cannot_create_second_login_session(pool: MySqlPool) -> anyhow::Result<()> {
     let host_id = seed_host(&pool).await?;
     seed_emulator(&pool, host_id, 2).await?;
     let account_id = seed_account(&pool, 1001).await?;
@@ -150,14 +137,14 @@ async fn same_account_cannot_create_second_login_session(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn failed_session_insert_releases_pending_binding(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn failed_session_insert_releases_pending_binding(pool: MySqlPool) -> anyhow::Result<()> {
     let host_id = seed_host(&pool).await?;
     seed_emulator(&pool, host_id, 1).await?;
     let account_id = seed_account(&pool, 1001).await?;
 
-    sqlx::query("DROP TABLE login_session").execute(&pool).await?;
+    sqlx::query("DROP TABLE login_session")
+        .execute(&pool)
+        .await?;
 
     let service = EnrollmentService::new(pool.clone());
     let result = service
