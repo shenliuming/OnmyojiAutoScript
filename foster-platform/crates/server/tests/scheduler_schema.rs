@@ -13,11 +13,7 @@ async fn seed_host(pool: &MySqlPool, suffix: &str) -> anyhow::Result<i64> {
     Ok(result.last_insert_id() as i64)
 }
 
-async fn seed_emulator(
-    pool: &MySqlPool,
-    host_id: i64,
-    suffix: &str,
-) -> anyhow::Result<i64> {
+async fn seed_emulator(pool: &MySqlPool, host_id: i64, suffix: &str) -> anyhow::Result<i64> {
     let result = sqlx::query(
         "INSERT INTO emulator_instance(
             host_id, emulator_code, driver_type,
@@ -120,8 +116,7 @@ async fn database_rejects_two_nonterminal_jobs_for_subscription(
 ) -> anyhow::Result<()> {
     let account_id = seed_account(&pool, 20001).await?;
     let plan_id = seed_plan(&pool, "one-active").await?;
-    let subscription_id =
-        seed_subscription(&pool, "one-active", account_id, plan_id).await?;
+    let subscription_id = seed_subscription(&pool, "one-active", account_id, plan_id).await?;
 
     insert_job(
         &pool,
@@ -157,10 +152,8 @@ async fn database_rejects_two_executing_jobs_for_same_account(
     let account_id = seed_account(&pool, 20002).await?;
     let plan_a = seed_plan(&pool, "same-account-a").await?;
     let plan_b = seed_plan(&pool, "same-account-b").await?;
-    let subscription_a =
-        seed_subscription(&pool, "same-account-a", account_id, plan_a).await?;
-    let subscription_b =
-        seed_subscription(&pool, "same-account-b", account_id, plan_b).await?;
+    let subscription_a = seed_subscription(&pool, "same-account-a", account_id, plan_a).await?;
+    let subscription_b = seed_subscription(&pool, "same-account-b", account_id, plan_b).await?;
 
     insert_job(
         &pool,
@@ -196,10 +189,8 @@ async fn database_rejects_two_executing_jobs_for_same_emulator(
     let account_b = seed_account(&pool, 20004).await?;
     let plan_a = seed_plan(&pool, "same-emulator-a").await?;
     let plan_b = seed_plan(&pool, "same-emulator-b").await?;
-    let subscription_a =
-        seed_subscription(&pool, "same-emulator-a", account_a, plan_a).await?;
-    let subscription_b =
-        seed_subscription(&pool, "same-emulator-b", account_b, plan_b).await?;
+    let subscription_a = seed_subscription(&pool, "same-emulator-a", account_a, plan_a).await?;
+    let subscription_b = seed_subscription(&pool, "same-emulator-b", account_b, plan_b).await?;
 
     insert_job(
         &pool,
@@ -229,8 +220,7 @@ async fn database_rejects_two_executing_jobs_for_same_emulator(
 async fn terminal_history_does_not_block_next_job(pool: MySqlPool) -> anyhow::Result<()> {
     let account_id = seed_account(&pool, 20005).await?;
     let plan_id = seed_plan(&pool, "history").await?;
-    let subscription_id =
-        seed_subscription(&pool, "history", account_id, plan_id).await?;
+    let subscription_id = seed_subscription(&pool, "history", account_id, plan_id).await?;
 
     insert_job(
         &pool,
