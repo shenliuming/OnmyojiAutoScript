@@ -389,6 +389,20 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         time.sleep(0.5)
 
     @cached_property
+    def provider_targets(self) -> ImageGrid:
+        """Platform mode must see every supported fish/taiko resource level."""
+        return ImageGrid([
+            self.I_U_FISH_6,
+            self.I_U_TAIKO_6,
+            self.I_U_FISH_5,
+            self.I_U_TAIKO_5,
+            self.I_U_FISH_4,
+            self.I_U_TAIKO_4,
+            self.I_U_FISH_3,
+            self.I_U_TAIKO_3,
+        ])
+
+    @cached_property
     def order_targets(self) -> ImageGrid:
         rule = self.config.kekkai_utilize.utilize_config.utilize_rule
         if rule == UtilizeRule.DEFAULT:
@@ -551,10 +565,18 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         scopes.append(alternate)
 
         for scope in scopes:
+            other_scope = (
+                SelectFriendList.DIFFERENT_SERVER
+                if scope == SelectFriendList.SAME_SERVER
+                else SelectFriendList.SAME_SERVER
+            )
+            # Force a tab round-trip so a previous scroll position cannot hide the provider.
+            self.switch_friend_list(other_scope)
             self.switch_friend_list(scope)
+
             for _ in range(21):
                 self.screenshot()
-                cards = self.order_targets.find_everyone(self.device.image)
+                cards = self.provider_targets.find_everyone(self.device.image) or []
                 card_areas = [area for _, _, area in cards]
                 ocr_results = self.O_PROVIDER_FRIEND_NAMES.detect_and_ocr(
                     self.device.image,
