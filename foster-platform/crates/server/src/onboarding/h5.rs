@@ -134,7 +134,9 @@ function render(s){
   $('nextRun').textContent=fmt(s.nextRunAt);
   $('blockInfo').textContent=s.effectiveBlockedUntil
     ?(s.blockReason+' 至 '+fmt(s.effectiveBlockedUntil)):'当前未暂停';
-  $('quiet').value=JSON.stringify(s.quietPeriods||[],null,2);
+  if(document.activeElement!==$('quiet')){
+    $('quiet').value=JSON.stringify(s.quietPeriods||[],null,2);
+  }
   $('jobs').innerHTML=(s.recentJobs||[]).map(j=>
     '<tr><td>'+j.status+'</td><td>'+fmt(j.scheduledAt)+'</td><td>'+fmt(j.finishedAt)+'</td><td>'+(j.resultMessage||'')+'</td></tr>'
   ).join('');
