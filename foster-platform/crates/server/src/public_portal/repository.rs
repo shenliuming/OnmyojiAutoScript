@@ -30,7 +30,7 @@ pub struct PortalSubscriptionRow {
 
 #[derive(Debug, Clone, FromRow)]
 pub struct QuietPeriodRow {
-    pub weekday_mask: i32,
+    pub weekday_mask: u8,
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
     pub timezone: String,
