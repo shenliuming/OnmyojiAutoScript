@@ -25,7 +25,10 @@ class FosterOnceTask(ScriptTask):
         seconds = int(remaining.total_seconds())
         return seconds if seconds > 0 else None
 
-    def execute_once(self) -> FosterOnceResult:
+    def execute_once(
+            self,
+            provider_alias: Optional[str] = None,
+            resource_type: Optional[str] = None) -> FosterOnceResult:
         con = self.config.kekkai_utilize.utilize_config
 
         self.ui_get_current_page()
@@ -55,6 +58,8 @@ class FosterOnceTask(ScriptTask):
             con.select_friend_list,
             con.shikigami_class,
             con.shikigami_order,
+            provider_alias=provider_alias,
+            resource_type=resource_type,
         )
 
         if self.foster_bridge_error_code:
