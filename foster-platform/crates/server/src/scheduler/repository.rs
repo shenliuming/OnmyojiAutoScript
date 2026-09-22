@@ -27,6 +27,7 @@ pub async fn list_due_subscription_ids(
     .bind(now.naive_utc())
     .bind(now.naive_utc())
     .bind(now.naive_utc())
+    .bind(now.naive_utc())
     .bind(i64::from(limit))
     .fetch_all(pool)
     .await
@@ -754,7 +755,11 @@ pub async fn list_schedulable_job_ids(
          FROM foster_job
          WHERE status = 'PENDING'
             OR status = 'WAITING_EMULATOR'
-            OR status = 'WAITING_RESOURCE'
+            OR (
+                status = 'WAITING_RESOURCE'
+                AND retry_after IS NOT NULL
+                AND retry_after <= ?
+            )
             OR (
                 status IN ('DEFERRED_QUIET', 'DEFERRED_MANUAL')
                 AND deferred_until IS NOT NULL
