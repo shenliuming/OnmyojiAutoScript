@@ -774,6 +774,7 @@ pub async fn list_schedulable_job_ids(
     )
     .bind(now.naive_utc())
     .bind(now.naive_utc())
+    .bind(now.naive_utc())
     .bind(i64::from(limit))
     .fetch_all(pool)
     .await
