@@ -1,11 +1,14 @@
-use axum::{Json, Router, routing::get};
+use axum::{Json, Router, routing::{get, post}};
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
 use crate::{
     agent_gateway::{handler::ws_handler, registry::AgentRegistry},
     config::AgentGatewayConfig,
-    enrollment::{public_api::get_public_login, sse::login_status_events},
+    enrollment::{
+        public_api::{confirm_login, get_public_login},
+        sse::login_status_events,
+    },
 };
 
 #[derive(Clone)]
@@ -25,6 +28,10 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/public/login/{public_token}/events",
             get(login_status_events),
+        )
+        .route(
+            "/public/login/{control_token}/confirm",
+            post(confirm_login),
         )
         .with_state(state)
 }

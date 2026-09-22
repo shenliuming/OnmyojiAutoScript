@@ -6,11 +6,13 @@ use axum::{
     http::StatusCode,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, MySqlPool};
 
 use crate::app::AppState;
+
+use super::{EnrollmentError, EnrollmentService};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +64,53 @@ impl PublicLoginRow {
 
     pub(crate) fn is_expired(&self) -> bool {
         self.expires_at <= Utc::now().naive_utc()
+    }
+}
+
+
+#[derive(Debug, Deserialize)]
+pub struct ConfirmLoginRequest {
+    pub confirmed: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmLoginResponse {
+    pub session_no: String,
+    pub status: &'static str,
+}
+
+pub async fn confirm_login(
+    Path(control_token): Path<String>,
+    State(state): State<AppState>,
+    Json(request): Json<ConfirmLoginRequest>,
+) -> Result<Json<ConfirmLoginResponse>, StatusCode> {
+    if !request.confirmed {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let session_no = EnrollmentService::new(state.pool.clone())
+        .confirm_login_session(&control_token)
+        .await
+        .map_err(activation_status)?;
+
+    Ok(Json(ConfirmLoginResponse {
+        session_no,
+        status: "SUCCESS",
+    }))
+}
+
+fn activation_status(error: EnrollmentError) -> StatusCode {
+    match error {
+        EnrollmentError::LoginSessionNotFound => StatusCode::NOT_FOUND,
+        EnrollmentError::LoginSessionExpired => StatusCode::GONE,
+        EnrollmentError::InvalidLoginState
+        | EnrollmentError::IdentityRejected
+        | EnrollmentError::BindingMismatch
+        | EnrollmentError::AccountBindingConflict => StatusCode::CONFLICT,
+        EnrollmentError::Allocation(_)
+        | EnrollmentError::Database(_)
+        | EnrollmentError::InvalidTtl => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 
