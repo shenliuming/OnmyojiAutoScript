@@ -86,9 +86,7 @@ impl AgentRegistry {
 
     pub fn remove_if_current(&self, host_id: i64, connection_id: Uuid) -> bool {
         match self.inner.entry(host_id) {
-            Entry::Occupied(entry)
-                if entry.get().presence.connection_id == connection_id =>
-            {
+            Entry::Occupied(entry) if entry.get().presence.connection_id == connection_id => {
                 entry.remove();
                 true
             }
