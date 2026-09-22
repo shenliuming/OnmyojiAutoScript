@@ -184,7 +184,6 @@ pub async fn mark_login_failed(
     Ok(())
 }
 
-
 #[derive(Debug, sqlx::FromRow)]
 pub struct LockedLoginSession {
     pub id: i64,
