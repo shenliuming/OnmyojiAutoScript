@@ -10,8 +10,7 @@ use foster_server::{
     app::{AppState, build_app_with_admin_token},
     config::AgentGatewayConfig,
     resource_admin::{
-        CreateResourceCycleRequest, ResourceAdminError, ResourceAdminService,
-        UpsertProviderRequest,
+        CreateResourceCycleRequest, ResourceAdminError, ResourceAdminService, UpsertProviderRequest,
     },
     resource_pool::{ReserveForJobResult, ResourcePoolService},
 };
