@@ -1,4 +1,7 @@
-use axum::{Json, Router, routing::{get, post}};
+use axum::{
+    Json, Router,
+    routing::{get, post},
+};
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
@@ -29,10 +32,7 @@ pub fn build_app(state: AppState) -> Router {
             "/public/login/{public_token}/events",
             get(login_status_events),
         )
-        .route(
-            "/public/login/{control_token}/confirm",
-            post(confirm_login),
-        )
+        .route("/public/login/{control_token}/confirm", post(confirm_login))
         .with_state(state)
 }
 
