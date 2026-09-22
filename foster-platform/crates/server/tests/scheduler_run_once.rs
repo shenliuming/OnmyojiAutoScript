@@ -156,12 +156,11 @@ async fn one_tick_creates_and_claims_due_job(pool: MySqlPool) -> anyhow::Result<
     assert_eq!(report.created_job_ids.len(), 1);
     assert_eq!(report.claimed_job_ids, report.created_job_ids);
 
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_job WHERE subscription_id = ?",
-    )
-    .bind(fixture.subscription_id)
-    .fetch_one(&pool)
-    .await?;
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM foster_job WHERE subscription_id = ?")
+            .bind(fixture.subscription_id)
+            .fetch_one(&pool)
+            .await?;
 
     assert_eq!(status, "SWITCHING_ACCOUNT");
     Ok(())
@@ -293,9 +292,7 @@ async fn retry_job_waits_until_retry_after(pool: MySqlPool) -> anyhow::Result<()
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn emulator_contention_leaves_second_job_waiting(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn emulator_contention_leaves_second_job_waiting(pool: MySqlPool) -> anyhow::Result<()> {
     let (_, emulator_id) = seed_host_emulator(&pool).await?;
     let plan_id = seed_plan(&pool).await?;
     let now = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
