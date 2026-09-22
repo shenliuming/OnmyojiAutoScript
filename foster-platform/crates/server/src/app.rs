@@ -1,5 +1,5 @@
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     routing::{get, post},
 };
 use serde_json::{Value, json};
@@ -13,6 +13,9 @@ use crate::{
         sse::login_status_events,
     },
     foster_dispatch::FosterDispatchService,
+    onboarding::{
+        AdminAuthConfig, admin_onboard, login_page, service_page,
+    },
     public_portal::{clear_pause, get_service_status, pause_service, replace_quiet_periods},
     resource_pool::ResourcePoolService,
     scheduler::SchedulerService,
@@ -26,12 +29,23 @@ pub struct AppState {
 }
 
 pub fn build_app(state: AppState) -> Router {
+    let admin_token = std::env::var("FOSTER_ADMIN_TOKEN").ok();
+    build_app_with_admin_token(state, admin_token)
+}
+
+pub fn build_app_with_admin_token(
+    state: AppState,
+    admin_token: Option<String>,
+) -> Router {
     spawn_stale_sweeper(state.clone());
     spawn_foster_scheduler(state.clone());
 
     Router::new()
         .route("/healthz", get(healthz))
         .route("/agent/ws", get(ws_handler))
+        .route("/admin/onboard", post(admin_onboard))
+        .route("/login/{public_token}", get(login_page))
+        .route("/service/{public_token}", get(service_page))
         .route("/public/login/{public_token}", get(get_public_login))
         .route(
             "/public/login/{public_token}/events",
@@ -47,6 +61,7 @@ pub fn build_app(state: AppState) -> Router {
             "/r/{control_token}/quiet-periods",
             axum::routing::put(replace_quiet_periods),
         )
+        .layer(Extension(AdminAuthConfig { token: admin_token }))
         .with_state(state)
 }
 
