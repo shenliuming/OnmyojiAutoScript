@@ -15,6 +15,10 @@ use crate::{
     foster_dispatch::FosterDispatchService,
     onboarding::{AdminAuthConfig, admin_onboard, login_page, service_page},
     public_portal::{clear_pause, get_service_status, pause_service, replace_quiet_periods},
+    resource_admin::{
+        admin_create_cycle, admin_get_resource_pool, admin_set_cycle_status,
+        admin_set_friend_binding, admin_set_provider_status, admin_upsert_provider,
+    },
     resource_pool::ResourcePoolService,
     scheduler::SchedulerService,
 };
@@ -39,6 +43,24 @@ pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) 
         .route("/healthz", get(healthz))
         .route("/agent/ws", get(ws_handler))
         .route("/admin/onboard", post(admin_onboard))
+        .route("/admin/providers", post(admin_upsert_provider))
+        .route(
+            "/admin/providers/{provider_id}/status",
+            axum::routing::put(admin_set_provider_status),
+        )
+        .route(
+            "/admin/accounts/{game_account_id}/providers/{provider_id}",
+            axum::routing::put(admin_set_friend_binding),
+        )
+        .route(
+            "/admin/providers/{provider_id}/cycles",
+            post(admin_create_cycle),
+        )
+        .route(
+            "/admin/resource-cycles/{cycle_id}/status",
+            axum::routing::put(admin_set_cycle_status),
+        )
+        .route("/admin/resource-pool", get(admin_get_resource_pool))
         .route("/login/{public_token}", get(login_page))
         .route("/service/{public_token}", get(service_page))
         .route("/public/login/{public_token}", get(get_public_login))
