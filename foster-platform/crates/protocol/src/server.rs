@@ -42,7 +42,6 @@ pub struct ExecuteFosterCommand {
     pub target_identity: FosterTargetIdentity,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ServerCommand {
