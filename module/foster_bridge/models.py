@@ -11,6 +11,7 @@ class FosterStageCheckpoint(BaseModel):
 class FosterExecuteRequest(BaseModel):
     config_name: str
     job_id: int
+    attempt: int = 0
     resource_mode: str = "USER_FRIEND"
     resource_type: Optional[str] = None
     provider_alias: Optional[str] = None
