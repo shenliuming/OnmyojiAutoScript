@@ -18,6 +18,7 @@ pub struct AllocationRow {
     pub provider_account_id: i64,
     pub provider_alias: String,
     pub resource_type: String,
+    pub status: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
