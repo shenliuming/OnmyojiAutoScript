@@ -5,8 +5,8 @@ use sqlx::MySqlPool;
 use uuid::Uuid;
 
 use super::repository::{
-    clear_next_run, has_active_binding, has_nonterminal_job, insert_pending_job,
-    has_executing_job_for_account, has_executing_job_for_emulator,
+    clear_next_run, has_active_binding, has_executing_job_for_account,
+    has_executing_job_for_emulator, has_nonterminal_job, insert_pending_job,
     list_due_subscription_ids, list_enabled_quiet_periods, lock_active_binding_for_account,
     lock_due_subscription, lock_emulator_for_claim, lock_job_for_claim, lock_job_gate_context,
     resume_job_pending, set_job_deferred, set_job_switching_account, set_job_waiting_emulator,
@@ -150,17 +150,14 @@ impl SchedulerService {
             return Ok(ClaimResult::WaitingEmulator);
         }
 
-        let Some(binding) =
-            lock_active_binding_for_account(&mut tx, job.game_account_id).await?
+        let Some(binding) = lock_active_binding_for_account(&mut tx, job.game_account_id).await?
         else {
             set_job_waiting_emulator(&mut tx, job.id, None).await?;
             tx.commit().await?;
             return Ok(ClaimResult::WaitingEmulator);
         };
 
-        let Some(emulator) =
-            lock_emulator_for_claim(&mut tx, binding.emulator_id).await?
-        else {
+        let Some(emulator) = lock_emulator_for_claim(&mut tx, binding.emulator_id).await? else {
             set_job_waiting_emulator(&mut tx, job.id, Some(binding.emulator_id)).await?;
             tx.commit().await?;
             return Ok(ClaimResult::WaitingEmulator);
