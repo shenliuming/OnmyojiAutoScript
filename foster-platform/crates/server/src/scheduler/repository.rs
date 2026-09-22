@@ -143,3 +143,107 @@ pub async fn clear_next_run(
 
     Ok(())
 }
+
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct JobGateRow {
+    pub id: i64,
+    pub status: String,
+    pub game_account_id: i64,
+    pub manual_pause_until: Option<NaiveDateTime>,
+    pub login_status: String,
+    pub verify_status: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct QuietPeriodRow {
+    pub weekday_mask: u8,
+    pub start_time: chrono::NaiveTime,
+    pub end_time: chrono::NaiveTime,
+    pub timezone: String,
+    pub before_buffer_minutes: i32,
+    pub after_buffer_minutes: i32,
+}
+
+pub async fn lock_job_gate_context(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+) -> Result<Option<JobGateRow>, sqlx::Error> {
+    sqlx::query_as::<_, JobGateRow>(
+        "SELECT
+            j.id,
+            j.status,
+            j.game_account_id,
+            s.manual_pause_until,
+            a.login_status,
+            a.verify_status
+         FROM foster_job j
+         JOIN foster_subscription s ON s.id = j.subscription_id
+         JOIN game_account a ON a.id = j.game_account_id
+         WHERE j.id = ?
+         FOR UPDATE",
+    )
+    .bind(job_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn list_enabled_quiet_periods(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+) -> Result<Vec<QuietPeriodRow>, sqlx::Error> {
+    sqlx::query_as::<_, QuietPeriodRow>(
+        "SELECT
+            weekday_mask,
+            start_time,
+            end_time,
+            timezone,
+            before_buffer_minutes,
+            after_buffer_minutes
+         FROM foster_quiet_period
+         WHERE game_account_id = ?
+           AND enabled = 1
+         ORDER BY id ASC",
+    )
+    .bind(game_account_id)
+    .fetch_all(&mut **tx)
+    .await
+}
+
+pub async fn set_job_deferred(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+    status: &str,
+    deferred_until: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = ?,
+             deferred_until = ?
+         WHERE id = ?",
+    )
+    .bind(status)
+    .bind(deferred_until.naive_utc())
+    .bind(job_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn resume_job_pending(
+    tx: &mut Transaction<'_, MySql>,
+    job_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE foster_job
+         SET status = 'PENDING',
+             deferred_until = NULL
+         WHERE id = ?",
+    )
+    .bind(job_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
