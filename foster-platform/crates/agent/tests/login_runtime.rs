@@ -66,6 +66,17 @@ async fn read_agent_event(
     Ok(serde_json::from_str(text.as_str())?)
 }
 
+async fn read_non_heartbeat_event(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+) -> anyhow::Result<AgentEnvelope> {
+    loop {
+        let event = read_agent_event(socket).await?;
+        if !matches!(event.payload, AgentEvent::Heartbeat(_)) {
+            return Ok(event);
+        }
+    }
+}
+
 async fn send_command(
     socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
     payload: ServerCommand,
@@ -120,9 +131,9 @@ async fn start_login_emits_ordered_login_events() -> anyhow::Result<()> {
     )
     .await?;
 
-    let preparing = read_agent_event(&mut socket).await?;
-    let qr = read_agent_event(&mut socket).await?;
-    let identity = read_agent_event(&mut socket).await?;
+    let preparing = read_non_heartbeat_event(&mut socket).await?;
+    let qr = read_non_heartbeat_event(&mut socket).await?;
+    let identity = read_non_heartbeat_event(&mut socket).await?;
 
     assert!(matches!(
         preparing.payload,
@@ -180,11 +191,17 @@ async fn cancel_login_invokes_executor_without_emitting_stale_login_events() -> 
     })
     .await?;
 
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), socket.next())
-            .await
-            .is_err()
-    );
+    let unexpected = tokio::time::timeout(Duration::from_millis(100), async {
+        loop {
+            let event = read_agent_event(&mut socket).await?;
+            if !matches!(event.payload, AgentEvent::Heartbeat(_)) {
+                return Ok::<_, anyhow::Error>(event);
+            }
+        }
+    })
+    .await;
+
+    assert!(unexpected.is_err());
 
     task.abort();
     Ok(())
