@@ -10,10 +10,10 @@ use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
 
 use super::repository::{
-    QuietPeriodRow, RecentJobRow, count_successes_between,
-    clear_manual_pause, insert_share_link, load_portal_subscription, load_quiet_periods,
-    load_recent_jobs, load_share_by_control_hash, load_share_by_public_hash, replace_quiet_periods,
-    revoke_active_links, set_manual_pause_until, touch_share_link,
+    QuietPeriodRow, RecentJobRow, clear_manual_pause, count_successes_between, insert_share_link,
+    load_portal_subscription, load_quiet_periods, load_recent_jobs, load_share_by_control_hash,
+    load_share_by_public_hash, replace_quiet_periods, revoke_active_links, set_manual_pause_until,
+    touch_share_link,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -141,9 +141,7 @@ impl PublicPortalService {
             .ok_or(PublicPortalError::NotFound)?;
         validate_share(&share.status, share.expire_at, now)?;
 
-        let status = self
-            .build_status(share.subscription_id, now)
-            .await?;
+        let status = self.build_status(share.subscription_id, now).await?;
         touch_share_link(&self.pool, share.id, now).await?;
         Ok(status)
     }
@@ -161,10 +159,7 @@ impl PublicPortalService {
         let row = load_portal_subscription(&self.pool, share.subscription_id)
             .await?
             .ok_or(PublicPortalError::NotFound)?;
-        Ok(row
-            .manual_pause_until
-            .map(to_utc)
-            .unwrap_or(until))
+        Ok(row.manual_pause_until.map(to_utc).unwrap_or(until))
     }
 
     pub async fn clear_pause(
@@ -247,20 +242,12 @@ impl PublicPortalService {
         let local_now = now.with_timezone(&Shanghai);
         let local_date = local_now.date_naive();
         let start_local = Shanghai
-            .from_local_datetime(
-                &local_date
-                    .and_hms_opt(0, 0, 0)
-                    .expect("midnight is valid"),
-            )
+            .from_local_datetime(&local_date.and_hms_opt(0, 0, 0).expect("midnight is valid"))
             .single()
             .expect("Asia/Shanghai midnight is unique");
         let next_date = local_date.succ_opt().expect("valid next day");
         let end_local = Shanghai
-            .from_local_datetime(
-                &next_date
-                    .and_hms_opt(0, 0, 0)
-                    .expect("midnight is valid"),
-            )
+            .from_local_datetime(&next_date.and_hms_opt(0, 0, 0).expect("midnight is valid"))
             .single()
             .expect("Asia/Shanghai midnight is unique");
 
@@ -350,10 +337,7 @@ fn pause_until(preset: &str, now: DateTime<Utc>) -> Result<DateTime<Utc>, Public
     }
 }
 
-fn current_quiet_until(
-    now: DateTime<Utc>,
-    rows: &[QuietPeriodRow],
-) -> Option<DateTime<Utc>> {
+fn current_quiet_until(now: DateTime<Utc>, rows: &[QuietPeriodRow]) -> Option<DateTime<Utc>> {
     let mut until = None;
     for row in rows {
         let window = QuietWindow {
@@ -363,8 +347,7 @@ fn current_quiet_until(
             before_buffer_minutes: i64::from(row.before_buffer_minutes),
             after_buffer_minutes: i64::from(row.after_buffer_minutes),
         };
-        if let ScheduleGate::DeferredUntil(value) =
-            evaluate_quiet_periods(now, Shanghai, &[window])
+        if let ScheduleGate::DeferredUntil(value) = evaluate_quiet_periods(now, Shanghai, &[window])
         {
             until = Some(until.map_or(value, |current: DateTime<Utc>| current.max(value)));
         }
