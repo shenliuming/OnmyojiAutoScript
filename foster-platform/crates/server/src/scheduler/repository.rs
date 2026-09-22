@@ -744,3 +744,34 @@ pub async fn mark_account_identity_mismatch(
 
     Ok(())
 }
+
+
+pub async fn list_schedulable_job_ids(
+    pool: &MySqlPool,
+    now: DateTime<Utc>,
+    limit: u32,
+) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT id
+         FROM foster_job
+         WHERE status = 'PENDING'
+            OR status = 'WAITING_EMULATOR'
+            OR (
+                status IN ('DEFERRED_QUIET', 'DEFERRED_MANUAL')
+                AND deferred_until IS NOT NULL
+                AND deferred_until <= ?
+            )
+            OR (
+                status = 'RETRY'
+                AND retry_after IS NOT NULL
+                AND retry_after <= ?
+            )
+         ORDER BY scheduled_at ASC, id ASC
+         LIMIT ?",
+    )
+    .bind(now.naive_utc())
+    .bind(now.naive_utc())
+    .bind(i64::from(limit))
+    .fetch_all(pool)
+    .await
+}
