@@ -5,12 +5,13 @@ use sqlx::MySqlPool;
 use uuid::Uuid;
 
 use super::repository::{
-    clear_next_run, has_active_binding, has_executing_job_for_account,
+    clear_next_run, count_successes_between, has_active_binding, has_executing_job_for_account,
     has_executing_job_for_emulator, has_nonterminal_job, insert_pending_job,
     list_due_subscription_ids, list_enabled_quiet_periods, lock_active_binding_for_account,
-    lock_due_subscription, lock_emulator_for_claim, lock_job_for_claim, lock_job_gate_context,
-    resume_job_pending, set_job_deferred, set_job_switching_account, set_job_waiting_emulator,
-    transition_job_status,
+    lock_due_subscription, lock_emulator_for_claim, lock_job_for_claim, lock_job_for_success,
+    lock_job_gate_context, lock_subscription_for_success, mark_job_success, resume_job_pending,
+    schedule_subscription_after_success, set_job_deferred, set_job_switching_account,
+    set_job_waiting_emulator, transition_job_status,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -21,6 +22,10 @@ pub enum SchedulerError {
     InvalidTimezone(String),
     #[error("foster job not found")]
     JobNotFound,
+    #[error("foster job is not running")]
+    JobNotRunning,
+    #[error("remaining seconds is out of range: {0}")]
+    InvalidRemainingSeconds(i64),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +53,67 @@ pub struct SchedulerService {
 impl SchedulerService {
     pub fn new(pool: MySqlPool) -> Self {
         Self { pool }
+    }
+
+    pub async fn complete_success(
+        &self,
+        job_id: i64,
+        success_at: DateTime<Utc>,
+        remaining_seconds: Option<i64>,
+    ) -> Result<DateTime<Utc>, SchedulerError> {
+        let mut tx = self.pool.begin().await?;
+
+        let job = lock_job_for_success(&mut tx, job_id)
+            .await?
+            .ok_or(SchedulerError::JobNotFound)?;
+
+        if job.status != "RUNNING" {
+            tx.rollback().await?;
+            return Err(SchedulerError::JobNotRunning);
+        }
+
+        let subscription = lock_subscription_for_success(&mut tx, job.subscription_id)
+            .await?
+            .ok_or(SchedulerError::JobNotFound)?;
+
+        let positive_remaining = remaining_seconds.filter(|seconds| *seconds > 0);
+        let stored_remaining = match positive_remaining {
+            Some(seconds) => Some(
+                i32::try_from(seconds)
+                    .map_err(|_| SchedulerError::InvalidRemainingSeconds(seconds))?,
+            ),
+            None => None,
+        };
+
+        let next_run_at = match positive_remaining {
+            Some(seconds) => success_at + chrono::Duration::seconds(seconds),
+            None => {
+                success_at + chrono::Duration::minutes(i64::from(subscription.interval_minutes))
+            }
+        };
+
+        mark_job_success(&mut tx, job.id, success_at, stored_remaining).await?;
+        schedule_subscription_after_success(
+            &mut tx,
+            subscription.id,
+            success_at,
+            next_run_at,
+        )
+        .await?;
+
+        tx.commit().await?;
+        Ok(next_run_at)
+    }
+
+    pub async fn count_successes_between(
+        &self,
+        game_account_id: i64,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<i64, SchedulerError> {
+        count_successes_between(&self.pool, game_account_id, start, end)
+            .await
+            .map_err(SchedulerError::Database)
     }
 
     pub async fn transition_job(
