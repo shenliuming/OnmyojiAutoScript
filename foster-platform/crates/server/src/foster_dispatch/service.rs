@@ -244,6 +244,12 @@ impl FosterDispatchService {
         if status == "SUCCESS" || is_terminal_status(&status) {
             return Ok(());
         }
+        if !matches!(
+            status.as_str(),
+            "SWITCHING_ACCOUNT" | "VERIFYING_ACCOUNT" | "RUNNING"
+        ) {
+            return Ok(());
+        }
 
         let target = load_dispatch_target(&self.pool, event.job_id)
             .await?
@@ -321,6 +327,12 @@ impl FosterDispatchService {
         };
 
         if is_terminal_status(&status) {
+            return Ok(());
+        }
+        if !matches!(
+            status.as_str(),
+            "SWITCHING_ACCOUNT" | "VERIFYING_ACCOUNT" | "RUNNING"
+        ) {
             return Ok(());
         }
 
