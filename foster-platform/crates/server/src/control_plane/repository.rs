@@ -95,7 +95,7 @@ pub async fn upsert_emulator_snapshot(
                 host_id, emulator_code, driver_type, adb_serial,
                 status, last_heartbeat_at
              )
-             VALUES (?, ?, ?, ?, 'IDLE', NOW(3))
+             VALUES (?, ?, ?, ?, 'OFFLINE', NOW(3))
              ON DUPLICATE KEY UPDATE
                 host_id = VALUES(host_id),
                 driver_type = VALUES(driver_type),
