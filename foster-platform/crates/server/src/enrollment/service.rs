@@ -115,7 +115,10 @@ impl EnrollmentService {
             AgentEvent::Hello(_)
             | AgentEvent::Heartbeat(_)
             | AgentEvent::EmulatorSnapshot(_)
-            | AgentEvent::Pong(_) => {}
+            | AgentEvent::Pong(_)
+            | AgentEvent::FosterStageChanged(_)
+            | AgentEvent::FosterSucceeded(_)
+            | AgentEvent::FosterFailed(_) => {}
         }
 
         Ok(())
