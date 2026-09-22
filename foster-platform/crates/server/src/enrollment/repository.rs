@@ -55,3 +55,132 @@ pub async fn release_pending_binding(pool: &MySqlPool, binding_id: i64) -> Resul
 
     Ok(())
 }
+
+
+pub async fn mark_login_preparing(
+    pool: &MySqlPool,
+    host_id: i64,
+    session_no: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE login_session ls
+         JOIN emulator_instance e ON e.id = ls.emulator_id
+         SET ls.status = 'PREPARING'
+         WHERE ls.session_no = ?
+           AND e.host_id = ?
+           AND ls.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+    )
+    .bind(session_no)
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn mark_login_qr_ready(
+    pool: &MySqlPool,
+    host_id: i64,
+    session_no: &str,
+    qr_payload: &str,
+    expires_at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE login_session ls
+         JOIN emulator_instance e ON e.id = ls.emulator_id
+         SET ls.status = 'QR_READY',
+             ls.qr_payload = ?,
+             ls.qr_expires_at = ?
+         WHERE ls.session_no = ?
+           AND e.host_id = ?
+           AND ls.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+    )
+    .bind(qr_payload)
+    .bind(expires_at.naive_utc())
+    .bind(session_no)
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn mark_login_qr_expired(
+    pool: &MySqlPool,
+    host_id: i64,
+    session_no: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE login_session ls
+         JOIN emulator_instance e ON e.id = ls.emulator_id
+         SET ls.status = 'QR_EXPIRED',
+             ls.qr_payload = NULL,
+             ls.qr_expires_at = NULL
+         WHERE ls.session_no = ?
+           AND e.host_id = ?
+           AND ls.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+    )
+    .bind(session_no)
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn mark_login_identity_detected(
+    pool: &MySqlPool,
+    host_id: i64,
+    session_no: &str,
+    masked_account: Option<&str>,
+    character_name: Option<&str>,
+    server_name: Option<&str>,
+    game_uid: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE login_session ls
+         JOIN emulator_instance e ON e.id = ls.emulator_id
+         SET ls.status = 'VERIFYING_ACCOUNT',
+             ls.detected_masked_account = ?,
+             ls.detected_character_name = ?,
+             ls.detected_server_name = ?,
+             ls.detected_game_uid = ?
+         WHERE ls.session_no = ?
+           AND e.host_id = ?
+           AND ls.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+    )
+    .bind(masked_account)
+    .bind(character_name)
+    .bind(server_name)
+    .bind(game_uid)
+    .bind(session_no)
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn mark_login_failed(
+    pool: &MySqlPool,
+    host_id: i64,
+    session_no: &str,
+    reason: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE login_session ls
+         JOIN emulator_instance e ON e.id = ls.emulator_id
+         SET ls.status = 'FAILED',
+             ls.failed_reason = ?
+         WHERE ls.session_no = ?
+           AND e.host_id = ?
+           AND ls.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+    )
+    .bind(reason)
+    .bind(session_no)
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
