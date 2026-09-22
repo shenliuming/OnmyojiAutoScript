@@ -191,6 +191,7 @@ pub async fn set_job_waiting_resource(
     tx: &mut Transaction<'_, MySql>,
     job_id: i64,
     message: &str,
+    retry_after: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE foster_job
@@ -200,11 +201,12 @@ pub async fn set_job_waiting_resource(
              resource_allocation_id = NULL,
              error_code = 'PROVIDER_NOT_FOUND',
              result_message = ?,
-             retry_after = NULL
+             retry_after = ?
          WHERE id = ?
            AND status IN ('PENDING', 'SWITCHING_ACCOUNT', 'WAITING_RESOURCE')",
     )
     .bind(message)
+    .bind(retry_after.naive_utc())
     .bind(job_id)
     .execute(&mut **tx)
     .await?;
