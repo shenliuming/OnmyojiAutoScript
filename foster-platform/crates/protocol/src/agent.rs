@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use foster_domain::EmulatorStatus;
+use foster_domain::{EmulatorStatus, FosterErrorCode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +75,48 @@ pub struct LoginFailed {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FosterStage {
+    SwitchingAccount,
+    VerifyingAccount,
+    Running,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FosterStageChanged {
+    pub job_id: i64,
+    pub stage: FosterStage,
+    pub occurred_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FosterDetectedIdentity {
+    pub masked_account: Option<String>,
+    pub character_name: Option<String>,
+    pub server_name: Option<String>,
+    pub game_uid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FosterSucceeded {
+    pub job_id: i64,
+    pub completed_at: DateTime<Utc>,
+    pub remaining_seconds: Option<i64>,
+    pub screenshot_url: Option<String>,
+    pub detected_identity: FosterDetectedIdentity,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FosterFailed {
+    pub job_id: i64,
+    pub failed_at: DateTime<Utc>,
+    pub error_code: FosterErrorCode,
+    pub message: String,
+    pub screenshot_url: Option<String>,
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AgentEvent {
@@ -87,4 +129,7 @@ pub enum AgentEvent {
     LoginQrExpired(LoginQrExpired),
     LoginIdentityDetected(LoginIdentityDetected),
     LoginFailed(LoginFailed),
+    FosterStageChanged(FosterStageChanged),
+    FosterSucceeded(FosterSucceeded),
+    FosterFailed(FosterFailed),
 }
