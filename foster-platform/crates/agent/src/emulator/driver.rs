@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use foster_domain::EmulatorStatus;
 use foster_protocol::EmulatorDescriptor;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,6 +19,8 @@ pub trait EmulatorDriver: Send + Sync + 'static {
     async fn stop(&self, instance_id: &str) -> Result<(), EmulatorDriverError>;
 
     async fn adb_serial(&self, instance_id: &str) -> Result<Option<String>, EmulatorDriverError>;
+
+    async fn status(&self, instance_id: &str) -> Result<EmulatorStatus, EmulatorDriverError>;
 
     async fn screenshot(&self, instance_id: &str) -> Result<Vec<u8>, EmulatorDriverError>;
 }
