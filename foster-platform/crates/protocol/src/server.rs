@@ -33,6 +33,7 @@ pub struct FosterTargetIdentity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecuteFosterCommand {
     pub job_id: i64,
+    pub attempt: i32,
     pub game_account_id: i64,
     pub emulator_code: String,
     pub resource_mode: ResourceMode,
