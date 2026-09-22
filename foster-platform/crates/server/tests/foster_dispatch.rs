@@ -143,7 +143,12 @@ async fn seed_fixture(pool: &MySqlPool, resource_mode: &str) -> anyhow::Result<F
     })
 }
 
-fn online_registry(host_id: i64) -> (AgentRegistry, mpsc::UnboundedReceiver<foster_server::agent_gateway::registry::OutboundMessage>) {
+fn online_registry(
+    host_id: i64,
+) -> (
+    AgentRegistry,
+    mpsc::UnboundedReceiver<foster_server::agent_gateway::registry::OutboundMessage>,
+) {
     let registry = AgentRegistry::default();
     let (sender, receiver) = mpsc::unbounded_channel();
 
@@ -190,15 +195,20 @@ async fn dispatch_builds_passwordless_identity_command(pool: MySqlPool) -> anyho
         command.target_identity.masked_account.as_deref(),
         Some("12****34")
     );
-    assert!(command
-        .target_identity
-        .account_aliases
-        .contains(&"12****S4".to_string()));
+    assert!(
+        command
+            .target_identity
+            .account_aliases
+            .contains(&"12****S4".to_string())
+    );
     assert_eq!(
         command.target_identity.character_name.as_deref(),
         Some("角色A")
     );
-    assert_eq!(command.target_identity.server_name.as_deref(), Some("春之樱"));
+    assert_eq!(
+        command.target_identity.server_name.as_deref(),
+        Some("春之樱")
+    );
 
     Ok(())
 }
@@ -280,12 +290,11 @@ async fn success_event_verifies_identity_and_schedules_next_run(
     assert_eq!(job.0, "SUCCESS");
     assert_eq!(job.1.as_deref(), Some("file:///success.png"));
 
-    let next_run_at: Option<chrono::NaiveDateTime> = sqlx::query_scalar(
-        "SELECT next_run_at FROM foster_subscription WHERE id = ?",
-    )
-    .bind(fixture.subscription_id)
-    .fetch_one(&pool)
-    .await?;
+    let next_run_at: Option<chrono::NaiveDateTime> =
+        sqlx::query_scalar("SELECT next_run_at FROM foster_subscription WHERE id = ?")
+            .bind(fixture.subscription_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(
         next_run_at,
         Some((at + chrono::Duration::seconds(1_810)).naive_utc())
@@ -295,9 +304,7 @@ async fn success_event_verifies_identity_and_schedules_next_run(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn identity_mismatch_success_event_suspends_account(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn identity_mismatch_success_event_suspends_account(pool: MySqlPool) -> anyhow::Result<()> {
     let fixture = seed_fixture(&pool, "USER_FRIEND").await?;
     let service = FosterDispatchService::new(pool.clone());
     let at = Utc.with_ymd_and_hms(2026, 9, 22, 12, 5, 0).unwrap();
@@ -365,10 +372,7 @@ async fn network_failure_from_switching_stage_retries(pool: MySqlPool) -> anyhow
 
     assert_eq!(row.0, "RETRY");
     assert_eq!(row.1, 1);
-    assert_eq!(
-        row.2,
-        Some((at + chrono::Duration::minutes(5)).naive_utc())
-    );
+    assert_eq!(row.2, Some((at + chrono::Duration::minutes(5)).naive_utc()));
 
     Ok(())
 }
@@ -392,24 +396,18 @@ async fn duplicate_terminal_success_event_is_ignored(pool: MySqlPool) -> anyhow:
         },
     });
 
-    service
-        .process_agent_event(fixture.host_id, &event)
-        .await?;
-    service
-        .process_agent_event(fixture.host_id, &event)
-        .await?;
+    service.process_agent_event(fixture.host_id, &event).await?;
+    service.process_agent_event(fixture.host_id, &event).await?;
 
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM foster_job WHERE id = ? AND status = 'SUCCESS'",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM foster_job WHERE id = ? AND status = 'SUCCESS'")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(count, 1);
 
     Ok(())
 }
-
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn platform_job_waits_for_resource_phase(pool: MySqlPool) -> anyhow::Result<()> {
