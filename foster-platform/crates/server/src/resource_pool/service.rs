@@ -109,6 +109,7 @@ impl ResourcePoolService {
             &mut tx,
             job.game_account_id,
             resource_type_name,
+            now,
             min_end_at,
         )
         .await?;
