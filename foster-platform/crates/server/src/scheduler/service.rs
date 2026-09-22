@@ -6,8 +6,10 @@ use uuid::Uuid;
 
 use super::repository::{
     clear_next_run, has_active_binding, has_nonterminal_job, insert_pending_job,
-    list_due_subscription_ids, list_enabled_quiet_periods, lock_due_subscription,
-    lock_job_gate_context, resume_job_pending, set_job_deferred,
+    has_executing_job_for_account, has_executing_job_for_emulator,
+    list_due_subscription_ids, list_enabled_quiet_periods, lock_active_binding_for_account,
+    lock_due_subscription, lock_emulator_for_claim, lock_job_for_claim, lock_job_gate_context,
+    resume_job_pending, set_job_deferred, set_job_switching_account, set_job_waiting_emulator,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -23,6 +25,15 @@ pub enum SchedulerError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobGateResult {
     Executable,
+    DeferredManual(DateTime<Utc>),
+    DeferredQuiet(DateTime<Utc>),
+    BlockedAccount,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClaimResult {
+    Claimed { emulator_id: i64 },
+    WaitingEmulator,
     DeferredManual(DateTime<Utc>),
     DeferredQuiet(DateTime<Utc>),
     BlockedAccount,
@@ -108,6 +119,70 @@ impl SchedulerService {
         tx.commit().await?;
 
         Ok(JobGateResult::Executable)
+    }
+
+    pub async fn claim_for_execution(
+        &self,
+        job_id: i64,
+        now: DateTime<Utc>,
+    ) -> Result<ClaimResult, SchedulerError> {
+        match self.gate_pending_job(job_id, now).await? {
+            JobGateResult::DeferredManual(until) => {
+                return Ok(ClaimResult::DeferredManual(until));
+            }
+            JobGateResult::DeferredQuiet(until) => {
+                return Ok(ClaimResult::DeferredQuiet(until));
+            }
+            JobGateResult::BlockedAccount => {
+                return Ok(ClaimResult::BlockedAccount);
+            }
+            JobGateResult::Executable => {}
+        }
+
+        let mut tx = self.pool.begin().await?;
+
+        let job = lock_job_for_claim(&mut tx, job_id)
+            .await?
+            .ok_or(SchedulerError::JobNotFound)?;
+
+        if job.status != "PENDING" {
+            tx.rollback().await?;
+            return Ok(ClaimResult::WaitingEmulator);
+        }
+
+        let Some(binding) =
+            lock_active_binding_for_account(&mut tx, job.game_account_id).await?
+        else {
+            set_job_waiting_emulator(&mut tx, job.id, None).await?;
+            tx.commit().await?;
+            return Ok(ClaimResult::WaitingEmulator);
+        };
+
+        let Some(emulator) =
+            lock_emulator_for_claim(&mut tx, binding.emulator_id).await?
+        else {
+            set_job_waiting_emulator(&mut tx, job.id, Some(binding.emulator_id)).await?;
+            tx.commit().await?;
+            return Ok(ClaimResult::WaitingEmulator);
+        };
+
+        let busy = emulator.host_status != "ONLINE"
+            || emulator.emulator_status != "IDLE"
+            || has_executing_job_for_emulator(&mut tx, emulator.id, job.id).await?
+            || has_executing_job_for_account(&mut tx, job.game_account_id, job.id).await?;
+
+        if busy {
+            set_job_waiting_emulator(&mut tx, job.id, Some(emulator.id)).await?;
+            tx.commit().await?;
+            return Ok(ClaimResult::WaitingEmulator);
+        }
+
+        set_job_switching_account(&mut tx, job.id, emulator.id, now).await?;
+        tx.commit().await?;
+
+        Ok(ClaimResult::Claimed {
+            emulator_id: emulator.id,
+        })
     }
 
     pub async fn create_due_jobs(
