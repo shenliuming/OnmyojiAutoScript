@@ -1,16 +1,9 @@
-use std::{
-    collections::VecDeque,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use axum::{Json, Router, routing::post};
 use foster_agent::{
-    emulator::{
-        CommandOutput, CommandRunner, EmulatorDriverError,
-        GenericAdbEmulatorDriver,
-    },
+    emulator::{CommandOutput, CommandRunner, EmulatorDriverError, GenericAdbEmulatorDriver},
     login::{HttpOasLoginExecutor, LoginExecutor},
 };
 use foster_protocol::StartLoginCommand;
@@ -77,7 +70,8 @@ async fn prepare_returns_png_data_url() -> anyhow::Result<()> {
         CommandOutput {
             success: true,
             stdout: b"device
-".to_vec(),
+"
+            .to_vec(),
             stderr: Vec::new(),
         },
         CommandOutput {
@@ -86,11 +80,8 @@ async fn prepare_returns_png_data_url() -> anyhow::Result<()> {
             stderr: Vec::new(),
         },
     ]);
-    let driver = GenericAdbEmulatorDriver::from_json_with_runner(
-        config_json(),
-        "adb".into(),
-        runner,
-    )?;
+    let driver =
+        GenericAdbEmulatorDriver::from_json_with_runner(config_json(), "adb".into(), runner)?;
     let executor = HttpOasLoginExecutor::new(
         driver,
         "http://127.0.0.1:9".into(),
