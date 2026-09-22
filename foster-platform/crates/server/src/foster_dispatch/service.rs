@@ -241,7 +241,7 @@ impl FosterDispatchService {
             return Ok(());
         };
 
-        if status == "SUCCESS" || is_terminal_status(&status) {
+        if is_terminal_status(&status) {
             return Ok(());
         }
         if !matches!(
