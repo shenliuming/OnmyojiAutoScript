@@ -13,9 +13,7 @@ use crate::{
         sse::login_status_events,
     },
     foster_dispatch::FosterDispatchService,
-    public_portal::{
-        clear_pause, get_service_status, pause_service, replace_quiet_periods,
-    },
+    public_portal::{clear_pause, get_service_status, pause_service, replace_quiet_periods},
     resource_pool::ResourcePoolService,
     scheduler::SchedulerService,
 };
@@ -41,7 +39,10 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route("/public/login/{control_token}/confirm", post(confirm_login))
         .route("/r/{public_token}", get(get_service_status))
-        .route("/r/{control_token}/pause", post(pause_service).delete(clear_pause))
+        .route(
+            "/r/{control_token}/pause",
+            post(pause_service).delete(clear_pause),
+        )
         .route(
             "/r/{control_token}/quiet-periods",
             axum::routing::put(replace_quiet_periods),
