@@ -46,6 +46,7 @@ impl HttpOasFosterExecutor {
 struct OasFosterRequest {
     config_name: String,
     job_id: i64,
+    attempt: i32,
     resource_mode: &'static str,
     resource_type: Option<&'static str>,
     provider_alias: Option<String>,
@@ -90,6 +91,7 @@ impl FosterExecutor for HttpOasFosterExecutor {
         let request = OasFosterRequest {
             config_name: self.config_name(&command.emulator_code),
             job_id: command.job_id,
+            attempt: command.attempt,
             resource_mode: resource_mode_name(command.resource_mode),
             resource_type: command.resource_type.map(resource_type_name),
             provider_alias: command.provider_alias.clone(),
