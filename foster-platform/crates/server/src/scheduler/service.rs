@@ -10,7 +10,8 @@ use uuid::Uuid;
 use super::repository::{
     clear_next_run, count_successes_between, has_active_binding, has_executing_job_for_account,
     has_executing_job_for_emulator, has_nonterminal_job, insert_pending_job,
-    list_due_subscription_ids, list_enabled_quiet_periods, lock_active_binding_for_account,
+    list_due_subscription_ids, list_enabled_quiet_periods, list_schedulable_job_ids,
+    lock_active_binding_for_account,
     lock_due_subscription, lock_emulator_for_claim, lock_job_for_claim, lock_job_for_failure,
     lock_job_for_success, lock_job_gate_context, lock_subscription_for_failure,
     lock_subscription_for_success, mark_account_identity_mismatch, mark_account_relogin_required,
@@ -51,6 +52,15 @@ pub enum ClaimResult {
     BlockedAccount,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SchedulerRunReport {
+    pub created_job_ids: Vec<i64>,
+    pub claimed_job_ids: Vec<i64>,
+    pub waiting_job_ids: Vec<i64>,
+    pub deferred_job_ids: Vec<i64>,
+    pub blocked_job_ids: Vec<i64>,
+}
+
 #[derive(Clone)]
 pub struct SchedulerService {
     pool: MySqlPool,
@@ -59,6 +69,36 @@ pub struct SchedulerService {
 impl SchedulerService {
     pub fn new(pool: MySqlPool) -> Self {
         Self { pool }
+    }
+
+    pub async fn run_once(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<SchedulerRunReport, SchedulerError> {
+        const DUE_LIMIT: u32 = 100;
+        const RUNNABLE_LIMIT: u32 = 200;
+
+        let created_job_ids = self.create_due_jobs(now, DUE_LIMIT).await?;
+        let candidate_job_ids =
+            list_schedulable_job_ids(&self.pool, now, RUNNABLE_LIMIT).await?;
+
+        let mut report = SchedulerRunReport {
+            created_job_ids,
+            ..Default::default()
+        };
+
+        for job_id in candidate_job_ids {
+            match self.claim_for_execution(job_id, now).await? {
+                ClaimResult::Claimed { .. } => report.claimed_job_ids.push(job_id),
+                ClaimResult::WaitingEmulator => report.waiting_job_ids.push(job_id),
+                ClaimResult::DeferredManual(_) | ClaimResult::DeferredQuiet(_) => {
+                    report.deferred_job_ids.push(job_id);
+                }
+                ClaimResult::BlockedAccount => report.blocked_job_ids.push(job_id),
+            }
+        }
+
+        Ok(report)
     }
 
     pub async fn handle_failure(
