@@ -93,13 +93,8 @@ impl SchedulerService {
         };
 
         mark_job_success(&mut tx, job.id, success_at, stored_remaining).await?;
-        schedule_subscription_after_success(
-            &mut tx,
-            subscription.id,
-            success_at,
-            next_run_at,
-        )
-        .await?;
+        schedule_subscription_after_success(&mut tx, subscription.id, success_at, next_run_at)
+            .await?;
 
         tx.commit().await?;
         Ok(next_run_at)
