@@ -480,3 +480,70 @@ pub async fn release_pending_binding_tx(
 
     Ok(result.rows_affected() == 1)
 }
+
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct LoginDispatchTarget {
+    pub id: i64,
+    pub session_no: String,
+    pub game_account_id: i64,
+    pub status: String,
+    pub host_id: i64,
+    pub emulator_code: String,
+}
+
+pub async fn lock_login_dispatch_target(
+    tx: &mut Transaction<'_, MySql>,
+    session_no: &str,
+) -> Result<Option<LoginDispatchTarget>, sqlx::Error> {
+    sqlx::query_as::<_, LoginDispatchTarget>(
+        "SELECT
+            ls.id,
+            ls.session_no,
+            ls.game_account_id,
+            ls.status,
+            e.host_id,
+            e.emulator_code
+         FROM login_session ls
+         JOIN emulator_instance e ON e.id = ls.emulator_id
+         WHERE ls.session_no = ?
+         FOR UPDATE",
+    )
+    .bind(session_no)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub async fn mark_login_waiting_emulator(
+    tx: &mut Transaction<'_, MySql>,
+    session_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE login_session
+         SET status = 'WAITING_EMULATOR'
+         WHERE id = ?
+           AND status IN ('CREATED', 'WAITING_EMULATOR')",
+    )
+    .bind(session_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn mark_login_preparing_after_dispatch(
+    tx: &mut Transaction<'_, MySql>,
+    session_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE login_session
+         SET status = 'PREPARING'
+         WHERE id = ?
+           AND status IN ('CREATED', 'WAITING_EMULATOR')",
+    )
+    .bind(session_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected() == 1)
+}
