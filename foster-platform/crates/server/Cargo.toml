@@ -5,14 +5,17 @@ edition.workspace = true
 
 [dependencies]
 axum.workspace = true
+base64.workspace = true
 chrono.workspace = true
 dashmap.workspace = true
 foster-domain = { path = "../domain" }
 foster-protocol = { path = "../protocol" }
 futures-util.workspace = true
 http.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
