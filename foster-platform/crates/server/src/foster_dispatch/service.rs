@@ -17,7 +17,7 @@ use crate::{
 
 use super::repository::{
     FosterDispatchTargetRow, FosterIdentityRow, current_job_status, job_belongs_to_host,
-    load_dispatch_target, load_identity_rows, set_job_screenshot_url,
+    load_dispatch_target, load_identity_rows, set_job_screenshot_url, set_job_waiting_resource,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -74,14 +74,12 @@ impl FosterDispatchService {
 
         let resource_mode = parse_resource_mode(&target.resource_mode)?;
         if resource_mode == ResourceMode::Platform {
-            self.scheduler
-                .handle_failure(
-                    job_id,
-                    FosterErrorCode::ProviderNotFound,
-                    "PLATFORM foster requires resource allocation phase",
-                    chrono::Utc::now(),
-                )
-                .await?;
+            set_job_waiting_resource(
+                &self.pool,
+                job_id,
+                "PLATFORM foster requires resource allocation phase",
+            )
+            .await?;
             return Ok(DispatchFosterResult::UnsupportedPlatform);
         }
 
