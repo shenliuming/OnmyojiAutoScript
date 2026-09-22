@@ -86,6 +86,7 @@ pub enum FosterStage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FosterStageChanged {
     pub job_id: i64,
+    pub attempt: i32,
     pub stage: FosterStage,
     pub occurred_at: DateTime<Utc>,
 }
@@ -101,6 +102,7 @@ pub struct FosterDetectedIdentity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FosterSucceeded {
     pub job_id: i64,
+    pub attempt: i32,
     pub completed_at: DateTime<Utc>,
     pub remaining_seconds: Option<i64>,
     pub screenshot_url: Option<String>,
@@ -110,6 +112,7 @@ pub struct FosterSucceeded {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FosterFailed {
     pub job_id: i64,
+    pub attempt: i32,
     pub failed_at: DateTime<Utc>,
     pub error_code: FosterErrorCode,
     pub message: String,
