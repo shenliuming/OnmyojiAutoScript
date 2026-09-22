@@ -16,7 +16,10 @@ from tasks.Utils.config_enum import ShikigamiClass
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
 from tasks.KekkaiUtilize.utils import CardClass, target_to_card_class
-from tasks.KekkaiUtilize.provider_target import find_provider_card_area
+from tasks.KekkaiUtilize.provider_target import (
+    expected_resource_card_type,
+    find_provider_card_area,
+)
 from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.GameUi.page import page_main, page_guild
 from module.base.utils import point2str
@@ -543,13 +546,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             resource_type: str,
             preferred_friend: SelectFriendList = SelectFriendList.SAME_SERVER):
         """Select only the Server-assigned platform provider row."""
-        expected_card_type = {
-            'FISH': '斗鱼',
-            'DOUYU': '斗鱼',
-            'TAIKO_JADE': '太鼓',
-            'JADE': '太鼓',
-            'TAIKO': '太鼓',
-        }.get((resource_type or '').upper())
+        expected_card_type = expected_resource_card_type(resource_type)
 
         if not expected_card_type:
             self.foster_bridge_error_code = 'PROVIDER_NOT_FOUND'
