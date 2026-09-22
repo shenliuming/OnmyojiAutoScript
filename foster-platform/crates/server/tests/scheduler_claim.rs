@@ -3,9 +3,7 @@ use foster_server::scheduler::{ClaimResult, SchedulerService};
 use sqlx::MySqlPool;
 
 struct ClaimFixture {
-    emulator_id: i64,
     account_id: i64,
-    subscription_id: i64,
     job_id: i64,
 }
 
@@ -124,12 +122,7 @@ async fn seed_bound_job(
     .await?
     .last_insert_id() as i64;
 
-    Ok(ClaimFixture {
-        emulator_id,
-        account_id,
-        subscription_id,
-        job_id,
-    })
+    Ok(ClaimFixture { account_id, job_id })
 }
 
 async fn add_quiet_period(pool: &MySqlPool, account_id: i64) -> anyhow::Result<()> {
