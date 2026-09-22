@@ -12,6 +12,7 @@ use sqlx::MySqlPool;
 
 use crate::{
     agent_gateway::registry::AgentRegistry,
+    resource_pool::{ReserveForJobResult, ResourcePoolError, ResourcePoolService},
     scheduler::{SchedulerError, SchedulerService},
 };
 
@@ -27,6 +28,8 @@ pub enum FosterDispatchError {
     Database(#[from] sqlx::Error),
     #[error(transparent)]
     Scheduler(#[from] SchedulerError),
+    #[error(transparent)]
+    ResourcePool(#[from] ResourcePoolError),
     #[error("foster job not found")]
     JobNotFound,
     #[error("foster job is not ready for dispatch")]
@@ -43,7 +46,7 @@ pub enum DispatchFosterResult {
     WaitingEmulator,
     RejectedIdentity,
     AlreadyHandled,
-    UnsupportedPlatform,
+    WaitingResource,
 }
 
 #[derive(Clone)]
@@ -74,15 +77,19 @@ impl FosterDispatchService {
         }
 
         let resource_mode = parse_resource_mode(&target.resource_mode)?;
-        if resource_mode == ResourceMode::Platform {
-            set_job_waiting_resource(
-                &self.pool,
-                job_id,
-                "PLATFORM foster requires resource allocation phase",
-            )
-            .await?;
-            return Ok(DispatchFosterResult::UnsupportedPlatform);
-        }
+        let resource_reservation = if resource_mode == ResourceMode::Platform {
+            match ResourcePoolService::new(self.pool.clone())
+                .reserve_for_job(job_id, chrono::Utc::now())
+                .await?
+            {
+                ReserveForJobResult::Reserved(reservation) => Some(reservation),
+                ReserveForJobResult::WaitingResource => {
+                    return Ok(DispatchFosterResult::WaitingResource);
+                }
+            }
+        } else {
+            None
+        };
 
         let identity_rows = load_identity_rows(&self.pool, target.game_account_id).await?;
         let target_identity = build_target_identity(&target, &identity_rows);
@@ -99,18 +106,29 @@ impl FosterDispatchService {
             return Ok(DispatchFosterResult::RejectedIdentity);
         }
 
+        let (resource_type, provider_alias) = match resource_reservation.as_ref() {
+            Some(reservation) => (
+                Some(reservation.resource_type),
+                Some(reservation.provider_alias.clone()),
+            ),
+            None => (
+                target
+                    .resource_type
+                    .as_deref()
+                    .map(parse_resource_type)
+                    .transpose()?,
+                None,
+            ),
+        };
+
         let command = ServerCommand::ExecuteFoster(ExecuteFosterCommand {
             job_id,
             attempt: target.retry_count,
             game_account_id: target.game_account_id,
             emulator_code: target.emulator_code,
             resource_mode,
-            resource_type: target
-                .resource_type
-                .as_deref()
-                .map(parse_resource_type)
-                .transpose()?,
-            provider_alias: None,
+            resource_type,
+            provider_alias,
             target_identity,
         });
 
@@ -123,6 +141,15 @@ impl FosterDispatchService {
         match delivered {
             Ok(Ok(())) => Ok(DispatchFosterResult::Dispatched),
             Ok(Err(_)) | Err(_) => {
+                if resource_mode == ResourceMode::Platform {
+                    ResourcePoolService::new(self.pool.clone())
+                        .release_for_job(
+                            job_id,
+                            "agent command delivery failed",
+                            chrono::Utc::now(),
+                        )
+                        .await?;
+                }
                 self.scheduler
                     .handle_failure(
                         job_id,
@@ -284,6 +311,12 @@ impl FosterDispatchService {
         self.ensure_running(event.job_id, event.completed_at)
             .await?;
 
+        if target.resource_mode == "PLATFORM" {
+            ResourcePoolService::new(self.pool.clone())
+                .confirm_for_job(event.job_id, event.completed_at, event.remaining_seconds)
+                .await?;
+        }
+
         let current = current_job_status(&self.pool, event.job_id)
             .await?
             .unwrap_or_default();
@@ -322,6 +355,29 @@ impl FosterDispatchService {
             "SWITCHING_ACCOUNT" | "VERIFYING_ACCOUNT" | "RUNNING"
         ) {
             return Ok(());
+        }
+
+        let target = load_dispatch_target(&self.pool, event.job_id)
+            .await?
+            .ok_or(FosterDispatchError::JobNotFound)?;
+
+        if target.resource_mode == "PLATFORM" {
+            let resource_pool = ResourcePoolService::new(self.pool.clone());
+            let released = resource_pool
+                .release_for_job(event.job_id, &event.message, event.failed_at)
+                .await?;
+
+            if event.error_code == FosterErrorCode::ProviderNotFound {
+                if let Some(released) = released {
+                    resource_pool
+                        .mark_provider_not_found(
+                            target.game_account_id,
+                            released.provider_account_id,
+                            event.failed_at,
+                        )
+                        .await?;
+                }
+            }
         }
 
         let _decision: RetryDecision = self
