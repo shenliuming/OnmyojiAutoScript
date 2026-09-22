@@ -45,9 +45,7 @@ async fn seed_account(pool: &MySqlPool) -> anyhow::Result<i64> {
     Ok(result.last_insert_id() as i64)
 }
 
-async fn create_session(
-    pool: &MySqlPool,
-) -> anyhow::Result<(EnrollmentService, i64, String)> {
+async fn create_session(pool: &MySqlPool) -> anyhow::Result<(EnrollmentService, i64, String)> {
     let host_id = seed_host(pool).await?;
     seed_emulator(pool, host_id).await?;
     let account_id = seed_account(pool).await?;
@@ -61,9 +59,7 @@ async fn create_session(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn valid_qr_event_persists_qr_and_expiry(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn valid_qr_event_persists_qr_and_expiry(pool: MySqlPool) -> anyhow::Result<()> {
     let (service, host_id, session_no) = create_session(&pool).await?;
 
     service
@@ -104,9 +100,7 @@ async fn valid_qr_event_persists_qr_and_expiry(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn refreshed_qr_replaces_previous_qr(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn refreshed_qr_replaces_previous_qr(pool: MySqlPool) -> anyhow::Result<()> {
     let (service, host_id, session_no) = create_session(&pool).await?;
 
     service
@@ -165,9 +159,7 @@ async fn refreshed_qr_replaces_previous_qr(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn wrong_host_cannot_mutate_login_session(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn wrong_host_cannot_mutate_login_session(pool: MySqlPool) -> anyhow::Result<()> {
     let (service, host_id, session_no) = create_session(&pool).await?;
 
     service
@@ -193,9 +185,7 @@ async fn wrong_host_cannot_mutate_login_session(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn terminal_session_ignores_late_qr_event(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn terminal_session_ignores_late_qr_event(pool: MySqlPool) -> anyhow::Result<()> {
     let (service, host_id, session_no) = create_session(&pool).await?;
 
     sqlx::query(
@@ -234,9 +224,7 @@ async fn terminal_session_ignores_late_qr_event(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn identity_event_moves_session_to_verifying_account(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn identity_event_moves_session_to_verifying_account(pool: MySqlPool) -> anyhow::Result<()> {
     let (service, host_id, session_no) = create_session(&pool).await?;
 
     service
