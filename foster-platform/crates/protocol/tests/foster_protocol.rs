@@ -15,6 +15,7 @@ fn execute_foster_serializes_with_stable_type_name() {
         sent_at: Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap(),
         payload: ServerCommand::ExecuteFoster(ExecuteFosterCommand {
             job_id: 99,
+            attempt: 2,
             game_account_id: 7,
             emulator_code: "emu-01".into(),
             resource_mode: ResourceMode::UserFriend,
@@ -43,11 +44,13 @@ fn foster_events_serialize_with_stable_tags() {
     let events = vec![
         AgentEvent::FosterStageChanged(FosterStageChanged {
             job_id: 1,
+            attempt: 0,
             stage: FosterStage::VerifyingAccount,
             occurred_at: at,
         }),
         AgentEvent::FosterSucceeded(FosterSucceeded {
             job_id: 1,
+            attempt: 0,
             completed_at: at,
             remaining_seconds: Some(21_600),
             screenshot_url: None,
@@ -60,6 +63,7 @@ fn foster_events_serialize_with_stable_tags() {
         }),
         AgentEvent::FosterFailed(FosterFailed {
             job_id: 2,
+            attempt: 0,
             failed_at: at,
             error_code: FosterErrorCode::NoSlot,
             message: "no slot".into(),
