@@ -67,7 +67,8 @@ impl FosterDispatchService {
         job_id: i64,
         registry: &AgentRegistry,
     ) -> Result<DispatchFosterResult, FosterDispatchError> {
-        self.dispatch_job_at(job_id, registry, chrono::Utc::now()).await
+        self.dispatch_job_at(job_id, registry, chrono::Utc::now())
+            .await
     }
 
     pub async fn dispatch_job_at(
@@ -152,11 +153,7 @@ impl FosterDispatchService {
             Ok(Err(_)) | Err(_) => {
                 if resource_mode == ResourceMode::Platform {
                     ResourcePoolService::new(self.pool.clone())
-                        .release_for_job(
-                            job_id,
-                            "agent command delivery failed",
-                            now,
-                        )
+                        .release_for_job(job_id, "agent command delivery failed", now)
                         .await?;
                 }
                 self.scheduler
