@@ -1,7 +1,10 @@
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use foster_agent::{
-    config::AgentConfig, emulator::FakeEmulatorDriver, foster::HttpOasFosterExecutor,
+    config::AgentConfig,
+    emulator::GenericAdbEmulatorDriver,
+    foster::HttpOasFosterExecutor,
+    login::HttpOasLoginExecutor,
     runtime::AgentRuntime,
 };
 
@@ -9,7 +12,8 @@ use foster_agent::{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -18,28 +22,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent_id = std::env::var("FOSTER_AGENT_ID")?;
     let host_id = std::env::var("FOSTER_HOST_ID")?.parse::<i64>()?;
 
+    let emulators_json = std::env::var("FOSTER_EMULATORS_JSON")?;
+    let adb_program =
+        std::env::var("FOSTER_ADB_PATH").unwrap_or_else(|_| "adb".to_string());
+    let driver =
+        GenericAdbEmulatorDriver::from_json(&emulators_json, adb_program)?;
+
     let oas_base_url = std::env::var("FOSTER_OAS_BASE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:22270".to_string());
-    let oas_config_map: HashMap<String, String> = std::env::var("FOSTER_OAS_CONFIG_MAP")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| serde_json::from_str(&value))
-        .transpose()?
-        .unwrap_or_default();
+
     let foster_timeout = std::env::var("FOSTER_OAS_TIMEOUT_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or_else(|| Duration::from_secs(180));
 
+    let login_qr_ttl = std::env::var("FOSTER_LOGIN_QR_TTL_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| Duration::from_secs(120));
+    let login_identity_timeout =
+        std::env::var("FOSTER_LOGIN_IDENTITY_TIMEOUT_SECONDS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_secs)
+            .unwrap_or_else(|| Duration::from_secs(300));
+    let login_poll_interval =
+        std::env::var("FOSTER_LOGIN_POLL_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_secs)
+            .unwrap_or_else(|| Duration::from_secs(2));
+
     tracing::info!(
         oas_base_url = %oas_base_url,
-        "starting foster agent; emulator vendor driver remains fake until host integration phase"
+        emulator_count = driver.oas_config_map().len(),
+        "starting foster agent with generic adb host runtime"
     );
 
-    let config = AgentConfig::production(server_ws_url, agent_token, agent_id, host_id);
-    let foster_executor = HttpOasFosterExecutor::new(oas_base_url, oas_config_map, foster_timeout);
-    let runtime = AgentRuntime::new(config, FakeEmulatorDriver::new(Vec::new()))
+    let config =
+        AgentConfig::production(server_ws_url, agent_token, agent_id, host_id);
+
+    let login_executor = HttpOasLoginExecutor::new(
+        driver.clone(),
+        oas_base_url.clone(),
+        login_qr_ttl,
+        login_identity_timeout,
+        login_poll_interval,
+    );
+
+    let foster_executor = HttpOasFosterExecutor::new(
+        oas_base_url,
+        driver.oas_config_map(),
+        foster_timeout,
+    );
+
+    let runtime = AgentRuntime::new(config, driver)
+        .with_login_executor(login_executor)
         .with_foster_executor(foster_executor);
 
     runtime.run().await?;
