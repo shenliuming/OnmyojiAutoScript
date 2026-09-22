@@ -76,19 +76,6 @@ impl FosterDispatchService {
         }
 
         let resource_mode = parse_resource_mode(&target.resource_mode)?;
-        let resource_reservation = if resource_mode == ResourceMode::Platform {
-            match ResourcePoolService::new(self.pool.clone())
-                .reserve_for_job(job_id, chrono::Utc::now())
-                .await?
-            {
-                ReserveForJobResult::Reserved(reservation) => Some(reservation),
-                ReserveForJobResult::WaitingResource => {
-                    return Ok(DispatchFosterResult::WaitingResource);
-                }
-            }
-        } else {
-            None
-        };
 
         let identity_rows = load_identity_rows(&self.pool, target.game_account_id).await?;
         let target_identity = build_target_identity(&target, &identity_rows);
@@ -104,6 +91,20 @@ impl FosterDispatchService {
                 .await?;
             return Ok(DispatchFosterResult::RejectedIdentity);
         }
+
+        let resource_reservation = if resource_mode == ResourceMode::Platform {
+            match ResourcePoolService::new(self.pool.clone())
+                .reserve_for_job(job_id, chrono::Utc::now())
+                .await?
+            {
+                ReserveForJobResult::Reserved(reservation) => Some(reservation),
+                ReserveForJobResult::WaitingResource => {
+                    return Ok(DispatchFosterResult::WaitingResource);
+                }
+            }
+        } else {
+            None
+        };
 
         let (resource_type, provider_alias) = match resource_reservation.as_ref() {
             Some(reservation) => (
