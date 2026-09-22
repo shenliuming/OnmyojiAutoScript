@@ -14,13 +14,10 @@ pub struct LockedResourceJob {
 #[derive(Debug, sqlx::FromRow)]
 pub struct AllocationRow {
     pub id: i64,
-    pub job_id: i64,
     pub resource_cycle_id: i64,
     pub provider_account_id: i64,
     pub provider_alias: String,
     pub resource_type: String,
-    pub status: String,
-    pub end_at: NaiveDateTime,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -28,10 +25,6 @@ pub struct ResourceCandidateRow {
     pub resource_cycle_id: i64,
     pub provider_account_id: i64,
     pub provider_alias: String,
-    pub resource_type: String,
-    pub end_at: NaiveDateTime,
-    pub occupied_slots: i32,
-    pub slot_capacity: i32,
 }
 
 pub async fn lock_resource_job(
@@ -86,17 +79,14 @@ pub async fn list_resource_candidates(
     tx: &mut Transaction<'_, MySql>,
     game_account_id: i64,
     resource_type: &str,
+    now: DateTime<Utc>,
     min_end_at: DateTime<Utc>,
 ) -> Result<Vec<ResourceCandidateRow>, sqlx::Error> {
     sqlx::query_as::<_, ResourceCandidateRow>(
         "SELECT
             c.id AS resource_cycle_id,
             c.provider_account_id,
-            p.provider_alias,
-            c.resource_type,
-            c.end_at,
-            c.occupied_slots,
-            c.slot_capacity
+            p.provider_alias
          FROM foster_resource_cycle c
          JOIN provider_account p
            ON p.id = c.provider_account_id
@@ -107,13 +97,14 @@ pub async fn list_resource_candidates(
           AND b.status = 'VERIFIED'
          WHERE c.resource_type = ?
            AND c.status = 'AVAILABLE'
-           AND c.start_at <= NOW(3)
+           AND c.start_at <= ?
            AND c.end_at >= ?
            AND c.occupied_slots < c.slot_capacity
          ORDER BY c.end_at ASC, c.occupied_slots DESC, c.id ASC",
     )
     .bind(game_account_id)
     .bind(resource_type)
+    .bind(now.naive_utc())
     .bind(min_end_at.naive_utc())
     .fetch_all(&mut **tx)
     .await
@@ -248,7 +239,6 @@ pub async fn confirm_allocation(
 #[derive(Debug, sqlx::FromRow)]
 pub struct ReleasableAllocationRow {
     pub id: i64,
-    pub job_id: i64,
     pub resource_cycle_id: i64,
     pub provider_account_id: i64,
     pub status: String,
