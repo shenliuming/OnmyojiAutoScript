@@ -3,14 +3,10 @@ use std::{collections::HashMap, time::Duration};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use foster_domain::{FosterErrorCode, ResourceMode, ResourceType};
-use foster_protocol::{
-    ExecuteFosterCommand, FosterDetectedIdentity, FosterStage,
-};
+use foster_protocol::{ExecuteFosterCommand, FosterDetectedIdentity, FosterStage};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    FosterExecution, FosterExecutor, FosterExecutorError, FosterStageCheckpoint,
-};
+use super::{FosterExecution, FosterExecutor, FosterExecutorError, FosterStageCheckpoint};
 
 #[derive(Debug, Clone)]
 pub struct HttpOasFosterExecutor {
@@ -21,11 +17,7 @@ pub struct HttpOasFosterExecutor {
 }
 
 impl HttpOasFosterExecutor {
-    pub fn new(
-        base_url: String,
-        config_map: HashMap<String, String>,
-        timeout: Duration,
-    ) -> Self {
+    pub fn new(base_url: String, config_map: HashMap<String, String>, timeout: Duration) -> Self {
         Self {
             client: reqwest::Client::new(),
             base_url: base_url.trim_end_matches('/').to_string(),
