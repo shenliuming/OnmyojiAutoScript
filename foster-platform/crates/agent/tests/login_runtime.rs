@@ -88,6 +88,7 @@ fn scenario() -> FakeLoginScenario {
     FakeLoginScenario {
         qr_payload: "fake-qr://login".into(),
         qr_ttl: Duration::from_secs(120),
+        identity_delay: Duration::ZERO,
         masked_account: Some("138****5678".into()),
         character_name: Some("角色A".into()),
         server_name: Some("春之樱".into()),
@@ -184,6 +185,67 @@ async fn cancel_login_invokes_executor_without_emitting_stale_login_events() -> 
             .await
             .is_err()
     );
+
+    task.abort();
+    Ok(())
+}
+
+
+#[tokio::test]
+async fn heartbeat_continues_while_waiting_for_login_identity() -> anyhow::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let url = format!("ws://{}/agent/ws", listener.local_addr()?);
+
+    let mut config = test_config(url);
+    config.heartbeat_interval = Duration::from_millis(40);
+
+    let mut delayed = scenario();
+    delayed.identity_delay = Duration::from_millis(180);
+
+    let runtime = AgentRuntime::new(config, FakeEmulatorDriver::new(Vec::new()))
+        .with_login_executor(FakeLoginExecutor::new(delayed));
+    let task = tokio::spawn(runtime.run());
+
+    let mut socket = accept_authenticated(&listener).await?;
+    let _hello = read_agent_event(&mut socket).await?;
+    let _snapshot = read_agent_event(&mut socket).await?;
+
+    send_command(
+        &mut socket,
+        ServerCommand::StartLogin(StartLoginCommand {
+            session_no: "LOGIN-SLOW".into(),
+            game_account_id: 1001,
+            emulator_code: "emu-01".into(),
+        }),
+    )
+    .await?;
+
+    let mut saw_qr = false;
+    let mut saw_heartbeat = false;
+    let mut saw_identity = false;
+
+    for _ in 0..12 {
+        let event = read_agent_event(&mut socket).await?;
+        match event.payload {
+            AgentEvent::LoginQrReady(value)
+                if value.session_no == "LOGIN-SLOW" =>
+            {
+                saw_qr = true;
+            }
+            AgentEvent::Heartbeat(_) => saw_heartbeat = true,
+            AgentEvent::LoginIdentityDetected(value)
+                if value.session_no == "LOGIN-SLOW" =>
+            {
+                saw_identity = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    assert!(saw_qr);
+    assert!(saw_heartbeat);
+    assert!(saw_identity);
 
     task.abort();
     Ok(())
