@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use foster_protocol::{
-    AgentEvent, LoginIdentityDetected, LoginPreparing, LoginQrExpired, LoginQrReady,
+    AgentEvent, LoginFailed, LoginIdentityDetected, LoginPreparing, LoginQrExpired, LoginQrReady,
 };
 use foster_server::enrollment::EnrollmentService;
 use sqlx::MySqlPool;
@@ -285,6 +285,55 @@ async fn identity_event_moves_session_to_verifying_account(pool: MySqlPool) -> a
     assert_eq!(row.2.as_deref(), Some("角色A"));
     assert_eq!(row.3.as_deref(), Some("春之樱"));
     assert_eq!(row.4.as_deref(), Some("10001"));
+
+    Ok(())
+}
+
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn login_failed_releases_pending_binding(pool: MySqlPool) -> anyhow::Result<()> {
+    let (service, host_id, session_no) = create_session(&pool).await?;
+
+    let binding_id: i64 = sqlx::query_scalar(
+        "SELECT binding_id
+         FROM login_session
+         WHERE session_no = ?",
+    )
+    .bind(&session_no)
+    .fetch_one(&pool)
+    .await?;
+
+    service
+        .process_agent_event(
+            host_id,
+            &AgentEvent::LoginFailed(LoginFailed {
+                session_no: session_no.clone(),
+                code: "QR_LOGIN_FAILED".into(),
+                message: "login rejected".into(),
+            }),
+        )
+        .await?;
+
+    let session_status: String = sqlx::query_scalar(
+        "SELECT status
+         FROM login_session
+         WHERE session_no = ?",
+    )
+    .bind(&session_no)
+    .fetch_one(&pool)
+    .await?;
+
+    let binding_status: String = sqlx::query_scalar(
+        "SELECT status
+         FROM emulator_account_binding
+         WHERE id = ?",
+    )
+    .bind(binding_id)
+    .fetch_one(&pool)
+    .await?;
+
+    assert_eq!(session_status, "FAILED");
+    assert_eq!(binding_status, "UNBOUND");
 
     Ok(())
 }
