@@ -297,16 +297,11 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 }
             };
 
-            if event_tx
-                .send(AgentEvent::LoginQrReady(LoginQrReady {
-                    session_no: command.session_no.clone(),
-                    qr_payload: prepared.qr_payload,
-                    expires_at: chrono::Utc::now() + qr_ttl,
-                }))
-                .is_err()
-            {
-                return;
-            }
+            event_tx.push(AgentEvent::LoginQrReady(LoginQrReady {
+                session_no: command.session_no.clone(),
+                qr_payload: prepared.qr_payload,
+                expires_at: chrono::Utc::now() + qr_ttl,
+            }));
 
             let identity = match executor.wait_identity(&command).await {
                 Ok(identity) => identity,
