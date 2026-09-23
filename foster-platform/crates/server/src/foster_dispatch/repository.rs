@@ -141,3 +141,26 @@ pub async fn current_job_retry_count(
     .fetch_optional(pool)
     .await
 }
+
+pub async fn mark_dispatch_delivery_uncertain(
+    pool: &MySqlPool,
+    job_id: i64,
+    attempt: i32,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE foster_job
+         SET status = 'RECOVERY_REQUIRED',
+             error_code = 'AGENT_DELIVERY_UNCERTAIN',
+             result_message = 'WebSocket delivery may have reached the Agent; review before retry',
+             retry_after = NULL
+         WHERE id = ?
+           AND retry_count = ?
+           AND status = 'SWITCHING_ACCOUNT'",
+    )
+    .bind(job_id)
+    .bind(attempt)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() == 1)
+}
