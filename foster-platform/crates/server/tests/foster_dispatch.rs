@@ -859,7 +859,10 @@ async fn uncertain_delivery_requires_recovery_instead_of_retry(
 
     let uncertain = tokio::spawn(async move {
         let outbound = receiver.recv().await.expect("foster command");
-        assert!(matches!(outbound.envelope.payload, ServerCommand::ExecuteFoster(_)));
+        assert!(matches!(
+            outbound.envelope.payload,
+            ServerCommand::ExecuteFoster(_)
+        ));
         drop(outbound.delivered);
     });
 
@@ -867,12 +870,11 @@ async fn uncertain_delivery_requires_recovery_instead_of_retry(
     uncertain.await?;
     assert_eq!(result, DispatchFosterResult::RecoveryRequired);
 
-    let job: (String, Option<String>) = sqlx::query_as(
-        "SELECT status, error_code FROM foster_job WHERE id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let job: (String, Option<String>) =
+        sqlx::query_as("SELECT status, error_code FROM foster_job WHERE id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(job.0, "RECOVERY_REQUIRED");
     assert_eq!(job.1.as_deref(), Some("AGENT_DELIVERY_UNCERTAIN"));
     Ok(())
@@ -899,27 +901,23 @@ async fn uncertain_platform_delivery_does_not_release_reserved_slot(
     uncertain.await?;
 
     assert_eq!(result, DispatchFosterResult::RecoveryRequired);
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_job WHERE id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let status: String = sqlx::query_scalar("SELECT status FROM foster_job WHERE id = ?")
+        .bind(fixture.job_id)
+        .fetch_one(&pool)
+        .await?;
     assert_eq!(status, "RECOVERY_REQUIRED");
 
-    let allocation_status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_resource_allocation WHERE job_id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let allocation_status: String =
+        sqlx::query_scalar("SELECT status FROM foster_resource_allocation WHERE job_id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(allocation_status, "RESERVED");
-    let slots: i32 = sqlx::query_scalar(
-        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let slots: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(slots, 1);
     Ok(())
 }

@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use foster_protocol::{
-    AgentCommandKind, AgentCommandState, AgentCommandStatus,
-};
+use foster_protocol::{AgentCommandKind, AgentCommandState, AgentCommandStatus};
 use sqlx::MySqlPool;
 
 use crate::{

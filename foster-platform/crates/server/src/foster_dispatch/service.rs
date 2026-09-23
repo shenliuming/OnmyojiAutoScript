@@ -19,8 +19,8 @@ use crate::{
 
 use super::repository::{
     FosterDispatchTargetRow, FosterIdentityRow, current_job_retry_count, current_job_status,
-    job_belongs_to_host, load_dispatch_target, load_identity_rows, mark_dispatch_delivery_uncertain,
-    set_job_screenshot_url,
+    job_belongs_to_host, load_dispatch_target, load_identity_rows,
+    mark_dispatch_delivery_uncertain, set_job_screenshot_url,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -578,10 +578,8 @@ fn is_terminal_status(status: &str) -> bool {
     )
 }
 
-
 const FOSTER_COMMAND_NAMESPACE: Uuid = Uuid::from_bytes([
-    0x1f, 0x82, 0x7d, 0x4d, 0x41, 0x6e, 0x47, 0x9a,
-    0xa2, 0x44, 0x8a, 0x67, 0x11, 0x53, 0xc2, 0x90,
+    0x1f, 0x82, 0x7d, 0x4d, 0x41, 0x6e, 0x47, 0x9a, 0xa2, 0x44, 0x8a, 0x67, 0x11, 0x53, 0xc2, 0x90,
 ]);
 
 pub fn foster_command_id(job_id: i64, attempt: i32) -> Uuid {

@@ -1,9 +1,7 @@
 use std::time::Duration;
 
 use chrono::Utc;
-use foster_protocol::{
-    AgentCommandKind, AgentCommandState, AgentCommandStatus,
-};
+use foster_protocol::{AgentCommandKind, AgentCommandState, AgentCommandStatus};
 use foster_server::{
     agent_reconciliation::AgentReconciliationService,
     enrollment::{EnrollmentService, login_command_id},
@@ -118,11 +116,7 @@ struct LoginFixture {
     binding_id: i64,
 }
 
-async fn seed_login(
-    pool: &MySqlPool,
-    suffix: &str,
-    status: &str,
-) -> anyhow::Result<LoginFixture> {
+async fn seed_login(pool: &MySqlPool, suffix: &str, status: &str) -> anyhow::Result<LoginFixture> {
     let host_id = sqlx::query(
         "INSERT INTO host(host_code, hostname, status)
          VALUES (?, ?, 'ONLINE')",
@@ -177,10 +171,7 @@ async fn seed_login(
     })
 }
 
-fn login_command_state(
-    fixture: &LoginFixture,
-    status: AgentCommandStatus,
-) -> AgentCommandState {
+fn login_command_state(fixture: &LoginFixture, status: AgentCommandStatus) -> AgentCommandState {
     AgentCommandState {
         command_id: login_command_id(&fixture.session_no),
         kind: AgentCommandKind::Login,
@@ -214,10 +205,7 @@ async fn binding_status(pool: &MySqlPool, binding_id: i64) -> anyhow::Result<Str
     .await?)
 }
 
-fn command_state(
-    fixture: &Fixture,
-    status: AgentCommandStatus,
-) -> AgentCommandState {
+fn command_state(fixture: &Fixture, status: AgentCommandStatus) -> AgentCommandState {
     AgentCommandState {
         command_id: foster_command_id(fixture.job_id, fixture.attempt),
         kind: AgentCommandKind::Foster,
@@ -287,9 +275,7 @@ async fn finished_command_waits_for_terminal_event_replay(pool: MySqlPool) -> an
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn interrupted_command_moves_job_to_recovery_required(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn interrupted_command_moves_job_to_recovery_required(pool: MySqlPool) -> anyhow::Result<()> {
     let fixture = seed_job(&pool, "interrupted", "RUNNING", 4).await?;
     let service = AgentReconciliationService::new(pool.clone());
 
@@ -343,7 +329,6 @@ async fn untrusted_command_id_does_not_preserve_job(pool: MySqlPool) -> anyhow::
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
 async fn interrupted_login_fails_session_and_releases_pending_slot(
     pool: MySqlPool,
@@ -392,10 +377,7 @@ async fn finished_login_command_is_preserved_for_cached_event_replay(
     let report = service
         .reconcile(
             fixture.host_id,
-            &[login_command_state(
-                &fixture,
-                AgentCommandStatus::Finished,
-            )],
+            &[login_command_state(&fixture, AgentCommandStatus::Finished)],
         )
         .await?;
 
@@ -427,7 +409,6 @@ async fn verifying_account_is_not_failed_when_agent_work_is_already_done(
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
 async fn switching_job_without_agent_state_is_safely_redispatched(
     pool: MySqlPool,
@@ -447,9 +428,7 @@ async fn switching_job_without_agent_state_is_safely_redispatched(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn interrupted_switching_job_is_not_redispatched(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn interrupted_switching_job_is_not_redispatched(pool: MySqlPool) -> anyhow::Result<()> {
     let fixture = seed_job(&pool, "redispatch-interrupted", "SWITCHING_ACCOUNT", 3).await?;
     let service = AgentReconciliationService::new(pool.clone());
 

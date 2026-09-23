@@ -1,5 +1,5 @@
-pub mod agent_reconciliation;
 pub mod agent_gateway;
+pub mod agent_reconciliation;
 pub mod app;
 pub mod config;
 pub mod control_plane;
