@@ -10,4 +10,5 @@ pub mod onboarding;
 pub mod public_portal;
 pub mod resource_admin;
 pub mod resource_pool;
+pub mod recovery;
 pub mod scheduler;
