@@ -22,8 +22,6 @@ pub struct AdminHostRequest {
     pub status: Option<String>,
 }
 
-
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdminEmulatorCapacityRequest {
@@ -62,8 +60,6 @@ pub async fn admin_list_hosts(
         .map(Json)
         .map_err(status_code)
 }
-
-
 
 pub async fn admin_list_host_emulators(
     State(state): State<AppState>,
