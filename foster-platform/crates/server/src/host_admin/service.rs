@@ -103,10 +103,7 @@ impl HostAdminService {
             .collect())
     }
 
-    pub async fn list_emulators(
-        &self,
-        host_id: i64,
-    ) -> Result<Vec<EmulatorView>, HostAdminError> {
+    pub async fn list_emulators(&self, host_id: i64) -> Result<Vec<EmulatorView>, HostAdminError> {
         if get_host(&self.pool, host_id).await?.is_none() {
             return Err(HostAdminError::HostNotFound);
         }
