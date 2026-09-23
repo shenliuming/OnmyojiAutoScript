@@ -48,7 +48,10 @@ pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) 
         .route("/readyz", get(readyz))
         .route("/agent/ws", get(ws_handler))
         .route("/admin/onboard", post(admin_onboard))
-        .route("/admin/hosts", post(admin_upsert_host).get(admin_list_hosts))
+        .route(
+            "/admin/hosts",
+            post(admin_upsert_host).get(admin_list_hosts),
+        )
         .route("/admin/providers", post(admin_upsert_provider))
         .route(
             "/admin/providers/{provider_id}/status",
@@ -97,10 +100,7 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
         .fetch_one(&state.pool)
         .await
     {
-        Ok(1) => (
-            StatusCode::OK,
-            Json(json!({ "status": "ready" })),
-        ),
+        Ok(1) => (StatusCode::OK, Json(json!({ "status": "ready" }))),
         _ => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "status": "not_ready" })),
