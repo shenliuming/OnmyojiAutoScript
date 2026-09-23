@@ -272,3 +272,9 @@ console.bat
 .vscode/*
 tasks/AutoCheckinBigGod/frida-server-17.6.2-android-x86_64
 oas.bat
+
+# Foster Platform local secrets
+foster-platform/prod.env
+foster-platform/server.env
+foster-platform/agent.env
+foster-platform/deploy/windows/agent.env
