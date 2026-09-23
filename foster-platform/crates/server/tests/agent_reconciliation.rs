@@ -1,0 +1,239 @@
+use chrono::Utc;
+use foster_protocol::{
+    AgentCommandKind, AgentCommandState, AgentCommandStatus,
+};
+use foster_server::{
+    agent_reconciliation::AgentReconciliationService,
+    foster_dispatch::foster_command_id,
+};
+use sqlx::MySqlPool;
+use uuid::Uuid;
+
+struct Fixture {
+    host_id: i64,
+    job_id: i64,
+    attempt: i32,
+}
+
+async fn seed_job(
+    pool: &MySqlPool,
+    suffix: &str,
+    status: &str,
+    attempt: i32,
+) -> anyhow::Result<Fixture> {
+    let host_id = sqlx::query(
+        "INSERT INTO host(host_code, hostname, status)
+         VALUES (?, ?, 'ONLINE')",
+    )
+    .bind(format!("host-reconcile-{suffix}"))
+    .bind(format!("host-reconcile-{suffix}"))
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    let emulator_id = sqlx::query(
+        "INSERT INTO emulator_instance(
+            host_id, emulator_code, driver_type,
+            max_account_count, status
+         )
+         VALUES (?, ?, 'FAKE', 5, 'IDLE')",
+    )
+    .bind(host_id)
+    .bind(format!("emu-reconcile-{suffix}"))
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    let account_id = sqlx::query(
+        "INSERT INTO game_account(
+            customer_id, login_status, verify_status, active_emulator_id
+         )
+         VALUES (?, 'LOGGED_IN', 'VERIFIED', ?)",
+    )
+    .bind(100_000 + host_id)
+    .bind(emulator_id)
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    let plan_id = sqlx::query(
+        "INSERT INTO foster_plan(
+            plan_code, plan_name, daily_target_runs,
+            interval_minutes, resource_mode, status
+         )
+         VALUES (?, ?, 4, 360, 'USER_FRIEND', 'ACTIVE')",
+    )
+    .bind(format!("PLAN-RECONCILE-{suffix}"))
+    .bind(format!("Plan Reconcile {suffix}"))
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    let subscription_id = sqlx::query(
+        "INSERT INTO foster_subscription(
+            subscription_no, game_account_id, plan_id,
+            resource_mode, daily_target_runs, interval_minutes,
+            status, start_at, end_at, next_run_at
+         )
+         VALUES (?, ?, ?, 'USER_FRIEND', 4, 360,
+                 'ACTIVE', NOW(3), DATE_ADD(NOW(3), INTERVAL 30 DAY), NULL)",
+    )
+    .bind(format!("SUB-RECONCILE-{suffix}"))
+    .bind(account_id)
+    .bind(plan_id)
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    let job_id = sqlx::query(
+        "INSERT INTO foster_job(
+            job_no, subscription_id, game_account_id,
+            emulator_id, status, retry_count, scheduled_at, started_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, NOW(3), NOW(3))",
+    )
+    .bind(format!("JOB-RECONCILE-{suffix}"))
+    .bind(subscription_id)
+    .bind(account_id)
+    .bind(emulator_id)
+    .bind(status)
+    .bind(attempt)
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    Ok(Fixture {
+        host_id,
+        job_id,
+        attempt,
+    })
+}
+
+fn command_state(
+    fixture: &Fixture,
+    status: AgentCommandStatus,
+) -> AgentCommandState {
+    AgentCommandState {
+        command_id: foster_command_id(fixture.job_id, fixture.attempt),
+        kind: AgentCommandKind::Foster,
+        status,
+        job_id: Some(fixture.job_id),
+        attempt: Some(fixture.attempt),
+        session_no: None,
+        updated_at: Utc::now(),
+    }
+}
+
+async fn job_status(pool: &MySqlPool, job_id: i64) -> anyhow::Result<(String, Option<String>)> {
+    Ok(sqlx::query_as(
+        "SELECT status, error_code
+         FROM foster_job
+         WHERE id = ?",
+    )
+    .bind(job_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+#[test]
+fn foster_command_id_is_stable_per_attempt() {
+    assert_eq!(foster_command_id(7, 2), foster_command_id(7, 2));
+    assert_ne!(foster_command_id(7, 2), foster_command_id(7, 3));
+    assert_ne!(foster_command_id(7, 2), foster_command_id(8, 2));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn matching_running_command_preserves_server_job(pool: MySqlPool) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "running", "RUNNING", 2).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let report = service
+        .reconcile(
+            fixture.host_id,
+            &[command_state(&fixture, AgentCommandStatus::Running)],
+        )
+        .await?;
+
+    assert_eq!(report.preserved, 1);
+    assert_eq!(report.recovery_required, 0);
+    assert_eq!(job_status(&pool, fixture.job_id).await?.0, "RUNNING");
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn finished_command_waits_for_terminal_event_replay(pool: MySqlPool) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "finished", "VERIFYING_ACCOUNT", 1).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let report = service
+        .reconcile(
+            fixture.host_id,
+            &[command_state(&fixture, AgentCommandStatus::Finished)],
+        )
+        .await?;
+
+    assert_eq!(report.preserved, 1);
+    assert_eq!(report.recovery_required, 0);
+    assert_eq!(
+        job_status(&pool, fixture.job_id).await?.0,
+        "VERIFYING_ACCOUNT"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn interrupted_command_moves_job_to_recovery_required(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "interrupted", "RUNNING", 4).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let report = service
+        .reconcile(
+            fixture.host_id,
+            &[command_state(&fixture, AgentCommandStatus::Interrupted)],
+        )
+        .await?;
+
+    assert_eq!(report.recovery_required, 1);
+
+    let state = job_status(&pool, fixture.job_id).await?;
+    assert_eq!(state.0, "RECOVERY_REQUIRED");
+    assert_eq!(state.1.as_deref(), Some("AGENT_RECOVERY_REQUIRED"));
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn missing_agent_command_moves_running_job_to_recovery_required(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "missing", "RUNNING", 0).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let report = service.reconcile(fixture.host_id, &[]).await?;
+
+    assert_eq!(report.recovery_required, 1);
+    assert_eq!(
+        job_status(&pool, fixture.job_id).await?.0,
+        "RECOVERY_REQUIRED"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn untrusted_command_id_does_not_preserve_job(pool: MySqlPool) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "wrong-id", "VERIFYING_ACCOUNT", 5).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let mut state = command_state(&fixture, AgentCommandStatus::Running);
+    state.command_id = Uuid::new_v4();
+
+    let report = service.reconcile(fixture.host_id, &[state]).await?;
+
+    assert_eq!(report.recovery_required, 1);
+    assert_eq!(
+        job_status(&pool, fixture.job_id).await?.0,
+        "RECOVERY_REQUIRED"
+    );
+    Ok(())
+}
