@@ -4,7 +4,6 @@ use sqlx::MySqlPool;
 pub struct ExecutingFosterJob {
     pub id: i64,
     pub retry_count: i32,
-    pub status: String,
 }
 
 pub async fn list_host_executing_foster_jobs(
@@ -12,7 +11,7 @@ pub async fn list_host_executing_foster_jobs(
     host_id: i64,
 ) -> Result<Vec<ExecutingFosterJob>, sqlx::Error> {
     sqlx::query_as::<_, ExecutingFosterJob>(
-        "SELECT j.id, j.retry_count, j.status
+        "SELECT j.id, j.retry_count
          FROM foster_job j
          JOIN emulator_instance e ON e.id = j.emulator_id
          WHERE e.host_id = ?
@@ -56,7 +55,6 @@ pub async fn mark_recovery_required(
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ActiveLoginSession {
     pub session_no: String,
-    pub status: String,
 }
 
 pub async fn list_host_active_login_sessions(
@@ -64,7 +62,7 @@ pub async fn list_host_active_login_sessions(
     host_id: i64,
 ) -> Result<Vec<ActiveLoginSession>, sqlx::Error> {
     sqlx::query_as::<_, ActiveLoginSession>(
-        "SELECT ls.session_no, ls.status
+        "SELECT ls.session_no
          FROM login_session ls
          JOIN emulator_instance e ON e.id = ls.emulator_id
          WHERE e.host_id = ?
