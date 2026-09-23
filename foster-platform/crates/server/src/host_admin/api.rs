@@ -10,9 +10,7 @@ use crate::{
     onboarding::{AdminAuthConfig, authorize_admin},
 };
 
-use super::service::{
-    EmulatorView, HostAdminError, HostAdminService, HostView, UpsertHostRequest,
-};
+use super::service::{EmulatorView, HostAdminError, HostAdminService, HostView, UpsertHostRequest};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
