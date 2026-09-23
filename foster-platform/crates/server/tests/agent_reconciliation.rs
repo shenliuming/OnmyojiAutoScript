@@ -468,3 +468,43 @@ async fn interrupted_switching_job_is_not_redispatched(
     );
     Ok(())
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn matching_running_switching_command_is_not_redispatched(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "redispatch-running", "SWITCHING_ACCOUNT", 4).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let report = service
+        .reconcile(
+            fixture.host_id,
+            &[command_state(&fixture, AgentCommandStatus::Running)],
+        )
+        .await?;
+
+    assert!(report.redispatch_job_ids.is_empty());
+    assert_eq!(
+        job_status(&pool, fixture.job_id).await?.0,
+        "SWITCHING_ACCOUNT"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn finished_switching_command_is_redispatched_for_cached_result(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "redispatch-finished", "SWITCHING_ACCOUNT", 5).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let report = service
+        .reconcile(
+            fixture.host_id,
+            &[command_state(&fixture, AgentCommandStatus::Finished)],
+        )
+        .await?;
+
+    assert_eq!(report.redispatch_job_ids, vec![fixture.job_id]);
+    Ok(())
+}
