@@ -107,6 +107,16 @@ impl AgentRegistry {
         host_id: i64,
         command: ServerCommand,
     ) -> Result<(), AgentSendError> {
+        self.send_command_with_id(host_id, Uuid::new_v4(), command)
+            .await
+    }
+
+    pub async fn send_command_with_id(
+        &self,
+        host_id: i64,
+        command_id: Uuid,
+        command: ServerCommand,
+    ) -> Result<(), AgentSendError> {
         let sender = self
             .inner
             .get(&host_id)
@@ -115,7 +125,7 @@ impl AgentRegistry {
 
         let envelope = ServerEnvelope {
             protocol_version: PROTOCOL_VERSION,
-            command_id: Uuid::new_v4(),
+            command_id,
             sent_at: Utc::now(),
             payload: command,
         };
