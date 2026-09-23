@@ -58,3 +58,23 @@ jobs:
           ../module/server/app.py
       - name: Test platform provider targeting
         run: cd .. && python -m unittest tasks.KekkaiUtilize.provider_target_test
+      - name: Validate production compose
+        run: docker compose --env-file prod.env.example -f docker-compose.prod.yml config > /dev/null
+      - name: Validate Windows deployment scripts
+        shell: pwsh
+        run: |
+          $allErrors = @()
+          Get-ChildItem deploy/windows/*.ps1 | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            $allErrors += $parseErrors
+          }
+          if ($allErrors.Count -gt 0) {
+            $allErrors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
