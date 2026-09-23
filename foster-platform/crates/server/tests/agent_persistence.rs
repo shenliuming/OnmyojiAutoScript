@@ -107,6 +107,7 @@ where
             hostname: "win-host".into(),
             os_version: "windows".into(),
             capabilities: vec!["EMULATOR_DISCOVERY".into()],
+            command_states: Vec::new(),
         }),
     )
     .await
