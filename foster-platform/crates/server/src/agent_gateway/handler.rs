@@ -87,19 +87,44 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         return;
     }
 
-    if AgentReconciliationService::new(state.pool.clone())
+    let reconciliation = match AgentReconciliationService::new(state.pool.clone())
         .reconcile(hello.host_id, &hello.command_states)
         .await
-        .is_err()
     {
-        state
-            .registry
-            .remove_if_current(hello.host_id, connection_id);
-        let _ = mark_host_offline(&state.pool, hello.host_id).await;
-        return;
-    }
+        Ok(report) => report,
+        Err(_) => {
+            state
+                .registry
+                .remove_if_current(hello.host_id, connection_id);
+            let _ = mark_host_offline(&state.pool, hello.host_id).await;
+            return;
+        }
+    };
 
     let (mut socket_sink, mut socket_stream) = socket.split();
+
+    if !reconciliation.redispatch_job_ids.is_empty() {
+        let redispatch_pool = state.pool.clone();
+        let redispatch_registry = state.registry.clone();
+        let redispatch_job_ids = reconciliation.redispatch_job_ids;
+
+        tokio::spawn(async move {
+            let dispatcher = FosterDispatchService::new(redispatch_pool);
+            for job_id in redispatch_job_ids {
+                if let Err(error) = dispatcher
+                    .dispatch_job(job_id, &redispatch_registry)
+                    .await
+                {
+                    tracing::warn!(
+                        job_id,
+                        error = %error,
+                        "failed to redispatch foster job after agent reconnect"
+                    );
+                }
+            }
+        });
+    }
+
     let mut deadline = tokio::time::Instant::now() + state.gateway_config.heartbeat_timeout;
 
     loop {
