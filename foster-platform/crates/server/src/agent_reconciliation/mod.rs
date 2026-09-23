@@ -1,6 +1,4 @@
 mod repository;
 mod service;
 
-pub use service::{
-    AgentReconciliationError, AgentReconciliationService, ReconciliationReport,
-};
+pub use service::{AgentReconciliationError, AgentReconciliationService, ReconciliationReport};

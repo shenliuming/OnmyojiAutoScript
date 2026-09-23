@@ -282,10 +282,8 @@ async fn heartbeat_continues_while_waiting_for_login_identity() -> anyhow::Resul
     Ok(())
 }
 
-
 #[tokio::test]
-async fn duplicate_start_login_executes_once_and_replays_terminal_identity(
-) -> anyhow::Result<()> {
+async fn duplicate_start_login_executes_once_and_replays_terminal_identity() -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let url = format!("ws://{}/agent/ws", listener.local_addr()?);
     let executor = FakeLoginExecutor::new(scenario());

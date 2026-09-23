@@ -111,10 +111,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         tokio::spawn(async move {
             let dispatcher = FosterDispatchService::new(redispatch_pool);
             for job_id in redispatch_job_ids {
-                if let Err(error) = dispatcher
-                    .dispatch_job(job_id, &redispatch_registry)
-                    .await
-                {
+                if let Err(error) = dispatcher.dispatch_job(job_id, &redispatch_registry).await {
                     tracing::warn!(
                         job_id,
                         error = %error,

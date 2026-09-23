@@ -58,8 +58,6 @@ impl FosterExecutor for SlowFosterExecutor {
     }
 }
 
-
-
 #[derive(Clone)]
 struct CountingFosterExecutor {
     count: Arc<AtomicUsize>,
@@ -253,10 +251,9 @@ async fn heartbeat_continues_while_foster_executes() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 #[tokio::test]
-async fn duplicate_foster_command_executes_once_and_replays_finished_result(
-) -> anyhow::Result<()> {
+async fn duplicate_foster_command_executes_once_and_replays_finished_result() -> anyhow::Result<()>
+{
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let url = format!("ws://{}/agent/ws", listener.local_addr()?);
     let count = Arc::new(AtomicUsize::new(0));
@@ -315,10 +312,12 @@ async fn foster_result_survives_websocket_reconnect() -> anyhow::Result<()> {
     let AgentEvent::Hello(hello) = hello.payload else {
         anyhow::bail!("expected reconnect hello");
     };
-    assert!(hello
-        .command_states
-        .iter()
-        .any(|state| state.job_id == Some(88)));
+    assert!(
+        hello
+            .command_states
+            .iter()
+            .any(|state| state.job_id == Some(88))
+    );
 
     let _snapshot = read_agent_event(&mut second_socket).await?;
     wait_for_foster_success(&mut second_socket, 88).await?;

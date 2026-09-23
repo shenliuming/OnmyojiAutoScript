@@ -53,7 +53,6 @@ pub async fn mark_recovery_required(
     Ok(result.rows_affected() == 1)
 }
 
-
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ActiveLoginSession {
     pub session_no: String,
@@ -82,7 +81,6 @@ pub async fn list_host_active_login_sessions(
     .fetch_all(pool)
     .await
 }
-
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SwitchingFosterJob {

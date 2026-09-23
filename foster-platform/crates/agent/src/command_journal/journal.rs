@@ -6,9 +6,7 @@ use std::{
 };
 
 use chrono::Utc;
-use foster_protocol::{
-    AgentCommandKind, AgentCommandState, AgentCommandStatus, AgentEvent,
-};
+use foster_protocol::{AgentCommandKind, AgentCommandState, AgentCommandStatus, AgentEvent};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -136,9 +134,7 @@ impl CommandJournal {
         if let Some(entry) = inner
             .entries
             .iter()
-            .find(|entry| {
-                entry.command_id == command_id || entry.execution_key == execution_key
-            })
+            .find(|entry| entry.command_id == command_id || entry.execution_key == execution_key)
             .cloned()
         {
             return Ok(match entry.status {
@@ -179,9 +175,7 @@ impl CommandJournal {
         if let Some(entry) = inner
             .entries
             .iter()
-            .find(|entry| {
-                entry.command_id == command_id || entry.execution_key == execution_key
-            })
+            .find(|entry| entry.command_id == command_id || entry.execution_key == execution_key)
             .cloned()
         {
             return Ok(match entry.status {
@@ -211,10 +205,7 @@ impl CommandJournal {
         Ok(CommandDecision::StartNew)
     }
 
-    pub fn interrupt_login(
-        &self,
-        session_no: &str,
-    ) -> Result<(), CommandJournalError> {
+    pub fn interrupt_login(&self, session_no: &str) -> Result<(), CommandJournalError> {
         let execution_key = login_execution_key(session_no);
         let mut inner = self.lock()?;
 
@@ -364,7 +355,6 @@ fn temp_path(path: &Path) -> PathBuf {
     PathBuf::from(value)
 }
 
-
 #[cfg(test)]
 mod tests {
     use foster_domain::FosterErrorCode;
@@ -405,9 +395,7 @@ mod tests {
         let command_id = Uuid::new_v4();
 
         journal.begin_foster(command_id, 9, 0).unwrap();
-        journal
-            .finish(command_id, terminal_event(9, 0))
-            .unwrap();
+        journal.finish(command_id, terminal_event(9, 0)).unwrap();
 
         assert!(matches!(
             journal.begin_foster(command_id, 9, 0).unwrap(),
@@ -447,10 +435,8 @@ mod tests {
 
     #[test]
     fn persisted_running_command_becomes_interrupted_after_reload() {
-        let path = std::env::temp_dir().join(format!(
-            "foster-command-journal-{}.json",
-            Uuid::new_v4()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("foster-command-journal-{}.json", Uuid::new_v4()));
         let command_id = Uuid::new_v4();
 
         {
