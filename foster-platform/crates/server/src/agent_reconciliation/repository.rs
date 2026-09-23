@@ -52,3 +52,33 @@ pub async fn mark_recovery_required(
 
     Ok(result.rows_affected() == 1)
 }
+
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ActiveLoginSession {
+    pub session_no: String,
+    pub status: String,
+}
+
+pub async fn list_host_active_login_sessions(
+    pool: &MySqlPool,
+    host_id: i64,
+) -> Result<Vec<ActiveLoginSession>, sqlx::Error> {
+    sqlx::query_as::<_, ActiveLoginSession>(
+        "SELECT ls.session_no, ls.status
+         FROM login_session ls
+         JOIN emulator_instance e ON e.id = ls.emulator_id
+         WHERE e.host_id = ?
+           AND ls.status IN (
+               'PREPARING',
+               'WAITING_QR',
+               'QR_READY',
+               'WAITING_SCAN',
+               'DETECTING_LOGIN'
+           )
+         ORDER BY ls.id",
+    )
+    .bind(host_id)
+    .fetch_all(pool)
+    .await
+}
