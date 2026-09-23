@@ -6,7 +6,6 @@ use sqlx::MySqlPool;
 use crate::{
     enrollment::{EnrollmentError, EnrollmentService, login_command_id},
     foster_dispatch::foster_command_id,
-    resource_pool::{ResourcePoolError, ResourcePoolService},
 };
 
 use super::repository::{
@@ -20,8 +19,6 @@ pub enum AgentReconciliationError {
     Database(#[from] sqlx::Error),
     #[error(transparent)]
     Enrollment(#[from] EnrollmentError),
-    #[error(transparent)]
-    ResourcePool(#[from] ResourcePoolError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -90,13 +87,6 @@ impl AgentReconciliationService {
                 )
                 .await?
             {
-                ResourcePoolService::new(self.pool.clone())
-                    .release_for_job(
-                        job_id,
-                        "agent recovery required after interrupted command",
-                        chrono::Utc::now(),
-                    )
-                    .await?;
                 report.recovery_required += 1;
             }
         }
@@ -119,13 +109,6 @@ impl AgentReconciliationService {
                     )
                     .await?
                     {
-                        ResourcePoolService::new(self.pool.clone())
-                            .release_for_job(
-                                job.id,
-                                "agent recovery required because command state was missing",
-                                chrono::Utc::now(),
-                            )
-                            .await?;
                         report.recovery_required += 1;
                     }
                 }
