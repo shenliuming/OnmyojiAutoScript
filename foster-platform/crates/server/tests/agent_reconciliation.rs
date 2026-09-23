@@ -492,12 +492,11 @@ async fn attach_platform_reservation(
     pool: &MySqlPool,
     fixture: &Fixture,
 ) -> anyhow::Result<(i64, i64)> {
-    let (account_id, subscription_id): (i64, i64) = sqlx::query_as(
-        "SELECT game_account_id, subscription_id FROM foster_job WHERE id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(pool)
-    .await?;
+    let (account_id, subscription_id): (i64, i64) =
+        sqlx::query_as("SELECT game_account_id, subscription_id FROM foster_job WHERE id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(pool)
+            .await?;
 
     sqlx::query(
         "UPDATE foster_subscription SET resource_mode = 'PLATFORM',
@@ -575,22 +574,23 @@ async fn interrupted_platform_job_holds_reservation_until_natural_end(
         .await?;
 
     assert_eq!(report.recovery_required, 1);
-    assert_eq!(job_status(&pool, fixture.job_id).await?.0, "RECOVERY_REQUIRED");
+    assert_eq!(
+        job_status(&pool, fixture.job_id).await?.0,
+        "RECOVERY_REQUIRED"
+    );
 
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_resource_allocation WHERE id = ?",
-    )
-    .bind(allocation_id)
-    .fetch_one(&pool)
-    .await?;
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM foster_resource_allocation WHERE id = ?")
+            .bind(allocation_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(status, "RESERVED");
 
-    let occupied: i32 = sqlx::query_scalar(
-        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let occupied: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(occupied, 1);
 
     let report = foster_server::resource_pool::ResourcePoolService::new(pool.clone())
@@ -598,12 +598,11 @@ async fn interrupted_platform_job_holds_reservation_until_natural_end(
         .await?;
     assert_eq!(report.expired_allocations, 1);
 
-    let after_reap: i32 = sqlx::query_scalar(
-        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let after_reap: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(after_reap, 0);
     Ok(())
 }
@@ -619,20 +618,18 @@ async fn missing_agent_platform_command_does_not_free_reserved_slot(
         .await?;
 
     assert_eq!(report.recovery_required, 1);
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_resource_allocation WHERE id = ?",
-    )
-    .bind(allocation_id)
-    .fetch_one(&pool)
-    .await?;
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM foster_resource_allocation WHERE id = ?")
+            .bind(allocation_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(status, "RESERVED");
 
-    let occupied: i32 = sqlx::query_scalar(
-        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let occupied: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(occupied, 1);
     Ok(())
 }
