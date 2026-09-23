@@ -47,8 +47,6 @@ pub struct HostView {
     pub bound_accounts: i64,
 }
 
-
-
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct EmulatorView {
@@ -162,7 +160,6 @@ fn host_view(row: HostAdminRow) -> HostView {
         bound_accounts: row.bound_accounts,
     }
 }
-
 
 fn emulator_view(row: EmulatorAdminRow) -> EmulatorView {
     EmulatorView {
