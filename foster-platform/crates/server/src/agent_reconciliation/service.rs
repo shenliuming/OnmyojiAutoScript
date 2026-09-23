@@ -13,7 +13,7 @@ use crate::{
 
 use super::repository::{
     list_host_active_login_sessions, list_host_executing_foster_jobs,
-    list_host_switching_foster_job_ids, mark_recovery_required,
+    list_host_switching_foster_jobs, mark_recovery_required,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -170,8 +170,17 @@ impl AgentReconciliationService {
             }
         }
 
-        report.redispatch_job_ids =
-            list_host_switching_foster_job_ids(&self.pool, host_id).await?;
+        report.redispatch_job_ids = list_host_switching_foster_jobs(&self.pool, host_id)
+            .await?
+            .into_iter()
+            .filter(|job| {
+                !matches!(
+                    trusted_foster.get(&(job.id, job.retry_count)),
+                    Some(AgentCommandStatus::Running)
+                )
+            })
+            .map(|job| job.id)
+            .collect();
 
         Ok(report)
     }
