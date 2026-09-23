@@ -9,6 +9,7 @@ use foster_protocol::{
     FosterSucceeded, FosterTargetIdentity, ServerCommand,
 };
 use sqlx::MySqlPool;
+use uuid::Uuid;
 
 use crate::{
     agent_gateway::registry::AgentRegistry,
@@ -144,7 +145,11 @@ impl FosterDispatchService {
 
         let delivered = tokio::time::timeout(
             Duration::from_secs(5),
-            registry.send_command(target.host_id, command),
+            registry.send_command_with_id(
+                target.host_id,
+                foster_command_id(job_id, target.retry_count),
+                command,
+            ),
         )
         .await;
 
@@ -555,4 +560,15 @@ fn is_terminal_status(status: &str) -> bool {
         status,
         "SUCCESS" | "FAILED" | "IDENTITY_MISMATCH" | "CANCELLED"
     )
+}
+
+
+const FOSTER_COMMAND_NAMESPACE: Uuid = Uuid::from_bytes([
+    0x1f, 0x82, 0x7d, 0x4d, 0x41, 0x6e, 0x47, 0x9a,
+    0xa2, 0x44, 0x8a, 0x67, 0x11, 0x53, 0xc2, 0x90,
+]);
+
+pub fn foster_command_id(job_id: i64, attempt: i32) -> Uuid {
+    let key = format!("foster:{job_id}:{attempt}");
+    Uuid::new_v5(&FOSTER_COMMAND_NAMESPACE, key.as_bytes())
 }
