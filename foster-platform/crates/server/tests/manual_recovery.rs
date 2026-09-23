@@ -393,7 +393,7 @@ async fn recovery_endpoints_require_admin_token_and_list_pending_jobs(
     pool: MySqlPool,
 ) -> anyhow::Result<()> {
     let fixture = seed_recovery(&pool, true).await?;
-    let app = build_app_with_admin_token(app_state(pool), Some("admin-secret".into()));
+    let app = build_app_with_admin_token(app_state(pool.clone()), Some("admin-secret".into()));
 
     let denied = app
         .clone()
