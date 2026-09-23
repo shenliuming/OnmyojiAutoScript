@@ -12,7 +12,8 @@ use crate::{
 };
 
 use super::repository::{
-    list_host_active_login_sessions, list_host_executing_foster_jobs, mark_recovery_required,
+    list_host_active_login_sessions, list_host_executing_foster_jobs,
+    list_host_switching_foster_job_ids, mark_recovery_required,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -25,11 +26,12 @@ pub enum AgentReconciliationError {
     ResourcePool(#[from] ResourcePoolError),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReconciliationReport {
     pub preserved: usize,
     pub recovery_required: usize,
     pub login_failed: usize,
+    pub redispatch_job_ids: Vec<i64>,
 }
 
 #[derive(Clone)]
@@ -167,6 +169,9 @@ impl AgentReconciliationService {
                 }
             }
         }
+
+        report.redispatch_job_ids =
+            list_host_switching_foster_job_ids(&self.pool, host_id).await?;
 
         Ok(report)
     }
