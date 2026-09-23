@@ -26,6 +26,7 @@ use crate::{
         admin_set_friend_binding, admin_set_provider_status, admin_upsert_provider,
     },
     resource_pool::ResourcePoolService,
+    recovery::{admin_list_recovery_jobs, admin_resolve_recovery_job},
     scheduler::SchedulerService,
 };
 
@@ -80,6 +81,11 @@ pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) 
             axum::routing::put(admin_set_cycle_status),
         )
         .route("/admin/resource-pool", get(admin_get_resource_pool))
+        .route("/admin/recovery-jobs", get(admin_list_recovery_jobs))
+        .route(
+            "/admin/recovery-jobs/{job_id}/resolve",
+            post(admin_resolve_recovery_job),
+        )
         .route("/login/{public_token}", get(login_page))
         .route("/service/{public_token}", get(service_page))
         .route("/public/login/{public_token}", get(get_public_login))
