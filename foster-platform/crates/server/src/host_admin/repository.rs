@@ -86,11 +86,11 @@ pub async fn get_host(pool: &MySqlPool, host_id: i64) -> Result<Option<HostAdmin
                 WHERE e.host_id = h.id
                   AND e.status <> 'OFFLINE'
             ) AS online_emulators,
-            COALESCE((
+            CAST(COALESCE((
                 SELECT SUM(e.max_account_count)
                 FROM emulator_instance e
                 WHERE e.host_id = h.id
-            ), 0) AS configured_capacity,
+            ), 0) AS SIGNED) AS configured_capacity,
             (
                 SELECT COUNT(*)
                 FROM emulator_account_binding b
@@ -126,11 +126,11 @@ pub async fn list_hosts(pool: &MySqlPool) -> Result<Vec<HostAdminRow>, sqlx::Err
                 WHERE e.host_id = h.id
                   AND e.status <> 'OFFLINE'
             ) AS online_emulators,
-            COALESCE((
+            CAST(COALESCE((
                 SELECT SUM(e.max_account_count)
                 FROM emulator_instance e
                 WHERE e.host_id = h.id
-            ), 0) AS configured_capacity,
+            ), 0) AS SIGNED) AS configured_capacity,
             (
                 SELECT COUNT(*)
                 FROM emulator_account_binding b
@@ -144,7 +144,6 @@ pub async fn list_hosts(pool: &MySqlPool) -> Result<Vec<HostAdminRow>, sqlx::Err
     .fetch_all(pool)
     .await
 }
-
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct EmulatorAdminRow {
