@@ -17,8 +17,7 @@ use crate::{
     },
     foster_dispatch::FosterDispatchService,
     host_admin::{
-        admin_list_host_emulators, admin_list_hosts, admin_set_emulator_capacity,
-        admin_upsert_host,
+        admin_list_host_emulators, admin_list_hosts, admin_set_emulator_capacity, admin_upsert_host,
     },
     onboarding::{AdminAuthConfig, admin_onboard, login_page, service_page},
     public_portal::{clear_pause, get_service_status, pause_service, replace_quiet_periods},
