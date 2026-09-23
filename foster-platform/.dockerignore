@@ -1,0 +1,7 @@
+target
+.env
+server.env
+prod.env
+agent.env
+deploy/windows/agent.env
+*.log
