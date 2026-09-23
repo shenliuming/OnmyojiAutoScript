@@ -170,12 +170,13 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 self.send_snapshot(socket).await?;
             }
             ServerCommand::StartLogin(command) => {
-                self.spawn_login_execution(command);
+                self.handle_start_login(command_id, command)?;
             }
             ServerCommand::CancelLogin(command) => {
                 if let Some(executor) = &self.login_executor {
                     executor.cancel(&command.session_no).await?;
                 }
+                self.command_journal.interrupt_login(&command.session_no)?;
             }
             ServerCommand::ExecuteFoster(command) => {
                 self.handle_execute_foster(command_id, command)?;
@@ -254,33 +255,52 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         Ok(())
     }
 
-    fn spawn_login_execution(
+    fn handle_start_login(
         &self,
+        command_id: Uuid,
         command: foster_protocol::StartLoginCommand,
-    ) {
-        let event_tx = self.outbox.clone();
+    ) -> Result<(), AgentRuntimeError> {
+        match self
+            .command_journal
+            .begin_login(command_id, &command.session_no)?
+        {
+            CommandDecision::AlreadyRunning | CommandDecision::Interrupted => return Ok(()),
+            CommandDecision::ReplayFinished(event) => {
+                self.outbox.push(event);
+                return Ok(());
+            }
+            CommandDecision::StartNew => {}
+        }
+
         let Some(executor) = self.login_executor.clone() else {
-            event_tx.push(AgentEvent::LoginFailed(LoginFailed {
+            let event = AgentEvent::LoginFailed(LoginFailed {
                 session_no: command.session_no,
                 code: "LOGIN_EXECUTOR_NOT_CONFIGURED".to_string(),
                 message: "login executor is not configured".to_string(),
-            }));
-            return;
+            });
+            self.command_journal.finish(command_id, event.clone())?;
+            self.outbox.push(event);
+            return Ok(());
         };
 
+        let journal = self.command_journal.clone();
+        let outbox = self.outbox.clone();
+
         tokio::spawn(async move {
-            event_tx.push(AgentEvent::LoginPreparing(LoginPreparing {
+            outbox.push(AgentEvent::LoginPreparing(LoginPreparing {
                 session_no: command.session_no.clone(),
             }));
 
             let prepared = match executor.prepare(&command).await {
                 Ok(prepared) => prepared,
                 Err(error) => {
-                    event_tx.push(AgentEvent::LoginFailed(LoginFailed {
+                    let event = AgentEvent::LoginFailed(LoginFailed {
                         session_no: command.session_no,
                         code: "LOGIN_PREPARE_FAILED".to_string(),
                         message: error.to_string(),
-                    }));
+                    });
+                    let _ = journal.finish(command_id, event.clone());
+                    outbox.push(event);
                     return;
                 }
             };
@@ -288,16 +308,18 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             let qr_ttl = match chrono::Duration::from_std(prepared.qr_ttl) {
                 Ok(value) => value,
                 Err(error) => {
-                    event_tx.push(AgentEvent::LoginFailed(LoginFailed {
+                    let event = AgentEvent::LoginFailed(LoginFailed {
                         session_no: command.session_no,
                         code: "LOGIN_QR_TTL_INVALID".to_string(),
                         message: error.to_string(),
-                    }));
+                    });
+                    let _ = journal.finish(command_id, event.clone());
+                    outbox.push(event);
                     return;
                 }
             };
 
-            event_tx.push(AgentEvent::LoginQrReady(LoginQrReady {
+            outbox.push(AgentEvent::LoginQrReady(LoginQrReady {
                 session_no: command.session_no.clone(),
                 qr_payload: prepared.qr_payload,
                 expires_at: chrono::Utc::now() + qr_ttl,
@@ -306,23 +328,29 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             let identity = match executor.wait_identity(&command).await {
                 Ok(identity) => identity,
                 Err(error) => {
-                    event_tx.push(AgentEvent::LoginFailed(LoginFailed {
+                    let event = AgentEvent::LoginFailed(LoginFailed {
                         session_no: command.session_no,
                         code: "LOGIN_IDENTITY_FAILED".to_string(),
                         message: error.to_string(),
-                    }));
+                    });
+                    let _ = journal.finish(command_id, event.clone());
+                    outbox.push(event);
                     return;
                 }
             };
 
-            event_tx.push(AgentEvent::LoginIdentityDetected(LoginIdentityDetected {
+            let event = AgentEvent::LoginIdentityDetected(LoginIdentityDetected {
                 session_no: command.session_no,
                 masked_account: identity.masked_account,
                 character_name: identity.character_name,
                 server_name: identity.server_name,
                 game_uid: identity.game_uid,
-            }));
+            });
+            let _ = journal.finish(command_id, event.clone());
+            outbox.push(event);
         });
+
+        Ok(())
     }
 
     async fn send_hello(&self, socket: &mut AgentWebSocket) -> Result<(), AgentRuntimeError> {
