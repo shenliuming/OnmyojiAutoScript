@@ -95,6 +95,25 @@ async fn send_command(
     Ok(())
 }
 
+async fn send_command_with_id(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    command_id: Uuid,
+    payload: ServerCommand,
+) -> anyhow::Result<()> {
+    let envelope = ServerEnvelope {
+        protocol_version: PROTOCOL_VERSION,
+        command_id,
+        sent_at: chrono::Utc::now(),
+        payload,
+    };
+
+    socket
+        .send(Message::Text(serde_json::to_string(&envelope)?.into()))
+        .await?;
+
+    Ok(())
+}
+
 fn scenario() -> FakeLoginScenario {
     FakeLoginScenario {
         qr_payload: "fake-qr://login".into(),
@@ -258,6 +277,63 @@ async fn heartbeat_continues_while_waiting_for_login_identity() -> anyhow::Resul
     assert!(saw_qr);
     assert!(saw_heartbeat);
     assert!(saw_identity);
+
+    task.abort();
+    Ok(())
+}
+
+
+#[tokio::test]
+async fn duplicate_start_login_executes_once_and_replays_terminal_identity(
+) -> anyhow::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let url = format!("ws://{}/agent/ws", listener.local_addr()?);
+    let executor = FakeLoginExecutor::new(scenario());
+    let observer = executor.clone();
+
+    let runtime = AgentRuntime::new(test_config(url), FakeEmulatorDriver::new(Vec::new()))
+        .with_login_executor(executor);
+    let task = tokio::spawn(runtime.run());
+
+    let mut socket = accept_authenticated(&listener).await?;
+    let _hello = read_agent_event(&mut socket).await?;
+    let _snapshot = read_agent_event(&mut socket).await?;
+
+    let command_id = Uuid::new_v4();
+    let command = ServerCommand::StartLogin(StartLoginCommand {
+        session_no: "LOGIN-DEDUPE".into(),
+        game_account_id: 1001,
+        emulator_code: "emu-01".into(),
+    });
+
+    send_command_with_id(&mut socket, command_id, command.clone()).await?;
+    send_command_with_id(&mut socket, command_id, command.clone()).await?;
+
+    let mut saw_identity = false;
+    for _ in 0..6 {
+        let event = read_non_heartbeat_event(&mut socket).await?;
+        if matches!(
+            event.payload,
+            AgentEvent::LoginIdentityDetected(ref value)
+                if value.session_no == "LOGIN-DEDUPE"
+        ) {
+            saw_identity = true;
+            break;
+        }
+    }
+
+    assert!(saw_identity);
+    assert_eq!(observer.prepare_count(), 1);
+
+    send_command_with_id(&mut socket, command_id, command).await?;
+    let replay = read_non_heartbeat_event(&mut socket).await?;
+
+    assert!(matches!(
+        replay.payload,
+        AgentEvent::LoginIdentityDetected(ref value)
+            if value.session_no == "LOGIN-DEDUPE"
+    ));
+    assert_eq!(observer.prepare_count(), 1);
 
     task.abort();
     Ok(())
