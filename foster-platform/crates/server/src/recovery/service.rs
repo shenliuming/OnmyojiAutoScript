@@ -350,12 +350,12 @@ impl RecoveryService {
             return Err(RecoveryError::SubscriptionUnavailable);
         }
         if let Some(allocation) = allocation {
-            if allocation.status != "RESERVED" {
-                return Err(RecoveryError::AllocationUnavailable);
-            }
-
-            sqlx::query(
-                "UPDATE foster_resource_allocation
+            if allocation.status == "EXPIRED" {
+                // Reap already released this slot at the resource cycle's natural end.
+                // The operator can still verify that no foster happened and retry.
+            } else if allocation.status == "RESERVED" {
+                sqlx::query(
+                    "UPDATE foster_resource_allocation
                  SET status = 'RELEASED', released_at = ?,
                      release_reason = 'operator verified no foster execution'
                  WHERE id = ? AND status = 'RESERVED'",
@@ -376,9 +376,12 @@ impl RecoveryService {
                  WHERE id = ?",
             )
             .bind(now.naive_utc())
-            .bind(allocation.resource_cycle_id)
-            .execute(&mut **tx)
-            .await?;
+                .bind(allocation.resource_cycle_id)
+                .execute(&mut **tx)
+                .await?;
+            } else {
+                return Err(RecoveryError::AllocationUnavailable);
+            }
         }
 
         let retry_after = now + chrono::Duration::minutes(5);
@@ -402,7 +405,13 @@ impl RecoveryService {
             status: "RETRY".to_string(),
             next_run_at: None,
             retry_after: Some(retry_after),
-            allocation_status: allocation.map(|_| "RELEASED".to_string()),
+            allocation_status: allocation.map(|a| {
+                if a.status == "EXPIRED" {
+                    "EXPIRED".to_string()
+                } else {
+                    "RELEASED".to_string()
+                }
+            }),
         })
     }
 }
