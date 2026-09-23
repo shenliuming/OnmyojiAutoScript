@@ -16,7 +16,10 @@ use crate::{
         sse::login_status_events,
     },
     foster_dispatch::FosterDispatchService,
-    host_admin::{admin_list_hosts, admin_upsert_host},
+    host_admin::{
+        admin_list_host_emulators, admin_list_hosts, admin_set_emulator_capacity,
+        admin_upsert_host,
+    },
     onboarding::{AdminAuthConfig, admin_onboard, login_page, service_page},
     public_portal::{clear_pause, get_service_status, pause_service, replace_quiet_periods},
     resource_admin::{
@@ -51,6 +54,14 @@ pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) 
         .route(
             "/admin/hosts",
             post(admin_upsert_host).get(admin_list_hosts),
+        )
+        .route(
+            "/admin/hosts/{host_id}/emulators",
+            get(admin_list_host_emulators),
+        )
+        .route(
+            "/admin/emulators/{emulator_id}/capacity",
+            axum::routing::put(admin_set_emulator_capacity),
         )
         .route("/admin/providers", post(admin_upsert_provider))
         .route(
