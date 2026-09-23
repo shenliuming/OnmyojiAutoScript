@@ -5,4 +5,6 @@ mod service;
 pub(crate) mod sse;
 
 pub use model::CreatedLoginSession;
-pub use service::{DispatchLoginResult, EnrollmentError, EnrollmentService};
+pub use service::{
+    DispatchLoginResult, EnrollmentError, EnrollmentService, login_command_id,
+};
