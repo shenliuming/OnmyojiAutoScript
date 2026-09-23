@@ -1,3 +1,4 @@
+pub mod command_journal;
 pub mod config;
 pub mod emulator;
 pub mod foster;
