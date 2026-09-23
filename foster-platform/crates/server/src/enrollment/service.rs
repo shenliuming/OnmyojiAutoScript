@@ -124,6 +124,16 @@ impl EnrollmentService {
         Ok(())
     }
 
+    pub async fn fail_login_for_recovery(
+        &self,
+        host_id: i64,
+        session_no: &str,
+        reason: &str,
+    ) -> Result<(), EnrollmentError> {
+        mark_login_failed(&self.pool, host_id, session_no, reason).await?;
+        Ok(())
+    }
+
     pub async fn dispatch_login_session(
         &self,
         session_no: &str,
