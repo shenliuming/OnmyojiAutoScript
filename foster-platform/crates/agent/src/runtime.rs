@@ -10,15 +10,16 @@ use foster_protocol::{
     ServerCommand, ServerEnvelope, validate_protocol_version,
 };
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
 use crate::{
+    command_journal::{CommandDecision, CommandJournal, CommandJournalError},
     config::AgentConfig,
     emulator::{EmulatorDriver, EmulatorDriverError},
     foster::{FosterExecutor, FosterExecutorError, events_for_execution},
     login::{LoginExecutor, LoginExecutorError},
+    outbox::AgentEventOutbox,
     ws::{AgentWebSocket, WsClientError, connect},
 };
 
@@ -36,6 +37,8 @@ pub enum AgentRuntimeError {
     LoginExecutor(#[from] LoginExecutorError),
     #[error(transparent)]
     FosterExecutor(#[from] FosterExecutorError),
+    #[error(transparent)]
+    CommandJournal(#[from] CommandJournalError),
 }
 
 pub struct AgentRuntime<D: EmulatorDriver> {
@@ -43,6 +46,8 @@ pub struct AgentRuntime<D: EmulatorDriver> {
     driver: Arc<D>,
     login_executor: Option<Arc<dyn LoginExecutor>>,
     foster_executor: Option<Arc<dyn FosterExecutor>>,
+    command_journal: CommandJournal,
+    outbox: AgentEventOutbox,
 }
 
 impl<D: EmulatorDriver> AgentRuntime<D> {
@@ -52,6 +57,8 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             driver: Arc::new(driver),
             login_executor: None,
             foster_executor: None,
+            command_journal: CommandJournal::in_memory(),
+            outbox: AgentEventOutbox::default(),
         }
     }
 
@@ -62,6 +69,11 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
 
     pub fn with_foster_executor<E: FosterExecutor>(mut self, executor: E) -> Self {
         self.foster_executor = Some(Arc::new(executor));
+        self
+    }
+
+    pub fn with_command_journal(mut self, command_journal: CommandJournal) -> Self {
+        self.command_journal = command_journal;
         self
     }
 
@@ -92,18 +104,23 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         self.send_snapshot(&mut socket).await?;
         self.send_heartbeat(&mut socket).await?;
 
+        for event in self.command_journal.finished_events()? {
+            self.outbox.push(event);
+        }
+
         let mut heartbeat = tokio::time::interval(self.config.heartbeat_interval);
         heartbeat.tick().await;
-        let (background_event_tx, mut background_event_rx) =
-            mpsc::unbounded_channel::<AgentEvent>();
 
         loop {
             tokio::select! {
                 _ = heartbeat.tick() => {
                     self.send_heartbeat(&mut socket).await?;
                 }
-                Some(event) = background_event_rx.recv() => {
-                    self.send_event(&mut socket, event).await?;
+                event = self.outbox.recv() => {
+                    if let Err(error) = self.send_event(&mut socket, event.clone()).await {
+                        self.outbox.requeue_front(event);
+                        return Err(error);
+                    }
                 }
                 incoming = socket.next() => {
                     let Some(message) = incoming else {
@@ -113,12 +130,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
 
                     match message {
                         Message::Text(text) => {
-                            self.handle_server_message(
-                                &mut socket,
-                                text.as_str(),
-                                &background_event_tx,
-                            )
-                            .await?;
+                            self.handle_server_message(&mut socket, text.as_str()).await?;
                         }
                         Message::Close(_) => return Ok(()),
                         Message::Ping(payload) => {
@@ -135,13 +147,14 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         &self,
         socket: &mut AgentWebSocket,
         text: &str,
-        background_event_tx: &mpsc::UnboundedSender<AgentEvent>,
     ) -> Result<(), AgentRuntimeError> {
         let envelope: ServerEnvelope = serde_json::from_str(text)?;
 
         if validate_protocol_version(envelope.protocol_version).is_err() {
             return Ok(());
         }
+
+        let command_id = envelope.command_id;
 
         match envelope.payload {
             ServerCommand::Ping(command) => {
@@ -157,7 +170,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 self.send_snapshot(socket).await?;
             }
             ServerCommand::StartLogin(command) => {
-                self.spawn_login_execution(command, background_event_tx.clone());
+                self.spawn_login_execution(command);
             }
             ServerCommand::CancelLogin(command) => {
                 if let Some(executor) = &self.login_executor {
@@ -165,29 +178,46 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 }
             }
             ServerCommand::ExecuteFoster(command) => {
-                self.spawn_foster_execution(command, background_event_tx.clone());
+                self.handle_execute_foster(command_id, command)?;
             }
         }
 
         Ok(())
     }
 
-    fn spawn_foster_execution(
+    fn handle_execute_foster(
         &self,
+        command_id: Uuid,
         command: foster_protocol::ExecuteFosterCommand,
-        event_tx: mpsc::UnboundedSender<AgentEvent>,
-    ) {
+    ) -> Result<(), AgentRuntimeError> {
+        match self
+            .command_journal
+            .begin_foster(command_id, command.job_id, command.attempt)?
+        {
+            CommandDecision::AlreadyRunning | CommandDecision::Interrupted => return Ok(()),
+            CommandDecision::ReplayFinished(event) => {
+                self.outbox.push(event);
+                return Ok(());
+            }
+            CommandDecision::StartNew => {}
+        }
+
         let Some(executor) = self.foster_executor.clone() else {
-            let _ = event_tx.send(AgentEvent::FosterFailed(foster_protocol::FosterFailed {
+            let event = AgentEvent::FosterFailed(foster_protocol::FosterFailed {
                 job_id: command.job_id,
                 attempt: command.attempt,
                 failed_at: chrono::Utc::now(),
                 error_code: foster_domain::FosterErrorCode::EmulatorOffline,
                 message: "foster executor is not configured".to_string(),
                 screenshot_url: None,
-            }));
-            return;
+            });
+            self.command_journal.finish(command_id, event.clone())?;
+            self.outbox.push(event);
+            return Ok(());
         };
+
+        let journal = self.command_journal.clone();
+        let outbox = self.outbox.clone();
 
         tokio::spawn(async move {
             let job_id = command.job_id;
@@ -196,34 +226,41 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             let execution = match executor.execute(&command).await {
                 Ok(execution) => execution,
                 Err(error) => {
-                    let _ =
-                        event_tx.send(AgentEvent::FosterFailed(foster_protocol::FosterFailed {
-                            job_id,
-                            attempt,
-                            failed_at: chrono::Utc::now(),
-                            error_code: foster_domain::FosterErrorCode::NetworkError,
-                            message: format!("foster executor failed: {error}"),
-                            screenshot_url: None,
-                        }));
+                    let event = AgentEvent::FosterFailed(foster_protocol::FosterFailed {
+                        job_id,
+                        attempt,
+                        failed_at: chrono::Utc::now(),
+                        error_code: foster_domain::FosterErrorCode::NetworkError,
+                        message: format!("foster executor failed: {error}"),
+                        screenshot_url: None,
+                    });
+                    let _ = journal.finish(command_id, event.clone());
+                    outbox.push(event);
                     return;
                 }
             };
 
             for event in events_for_execution(job_id, attempt, execution) {
-                if event_tx.send(event).is_err() {
-                    break;
+                if matches!(
+                    event,
+                    AgentEvent::FosterSucceeded(_) | AgentEvent::FosterFailed(_)
+                ) {
+                    let _ = journal.finish(command_id, event.clone());
                 }
+                outbox.push(event);
             }
         });
+
+        Ok(())
     }
 
     fn spawn_login_execution(
         &self,
         command: foster_protocol::StartLoginCommand,
-        event_tx: mpsc::UnboundedSender<AgentEvent>,
     ) {
+        let event_tx = self.outbox.clone();
         let Some(executor) = self.login_executor.clone() else {
-            let _ = event_tx.send(AgentEvent::LoginFailed(LoginFailed {
+            event_tx.push(AgentEvent::LoginFailed(LoginFailed {
                 session_no: command.session_no,
                 code: "LOGIN_EXECUTOR_NOT_CONFIGURED".to_string(),
                 message: "login executor is not configured".to_string(),
@@ -232,14 +269,14 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         };
 
         tokio::spawn(async move {
-            let _ = event_tx.send(AgentEvent::LoginPreparing(LoginPreparing {
+            event_tx.push(AgentEvent::LoginPreparing(LoginPreparing {
                 session_no: command.session_no.clone(),
             }));
 
             let prepared = match executor.prepare(&command).await {
                 Ok(prepared) => prepared,
                 Err(error) => {
-                    let _ = event_tx.send(AgentEvent::LoginFailed(LoginFailed {
+                    event_tx.push(AgentEvent::LoginFailed(LoginFailed {
                         session_no: command.session_no,
                         code: "LOGIN_PREPARE_FAILED".to_string(),
                         message: error.to_string(),
@@ -251,7 +288,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             let qr_ttl = match chrono::Duration::from_std(prepared.qr_ttl) {
                 Ok(value) => value,
                 Err(error) => {
-                    let _ = event_tx.send(AgentEvent::LoginFailed(LoginFailed {
+                    event_tx.push(AgentEvent::LoginFailed(LoginFailed {
                         session_no: command.session_no,
                         code: "LOGIN_QR_TTL_INVALID".to_string(),
                         message: error.to_string(),
@@ -274,7 +311,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             let identity = match executor.wait_identity(&command).await {
                 Ok(identity) => identity,
                 Err(error) => {
-                    let _ = event_tx.send(AgentEvent::LoginFailed(LoginFailed {
+                    event_tx.push(AgentEvent::LoginFailed(LoginFailed {
                         session_no: command.session_no,
                         code: "LOGIN_IDENTITY_FAILED".to_string(),
                         message: error.to_string(),
@@ -283,7 +320,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 }
             };
 
-            let _ = event_tx.send(AgentEvent::LoginIdentityDetected(LoginIdentityDetected {
+            event_tx.push(AgentEvent::LoginIdentityDetected(LoginIdentityDetected {
                 session_no: command.session_no,
                 masked_account: identity.masked_account,
                 character_name: identity.character_name,
@@ -312,7 +349,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                     "FOSTER_EXECUTION".to_string(),
                     "COMMAND_JOURNAL_V1".to_string(),
                 ],
-                command_states: Vec::new(),
+                command_states: self.command_journal.states()?,
             }),
         )
         .await
