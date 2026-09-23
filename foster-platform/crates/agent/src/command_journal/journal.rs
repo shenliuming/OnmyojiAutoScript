@@ -213,12 +213,11 @@ impl CommandJournal {
             .entries
             .iter_mut()
             .find(|entry| entry.execution_key == execution_key)
+            && entry.status == AgentCommandStatus::Running
         {
-            if entry.status == AgentCommandStatus::Running {
-                entry.status = AgentCommandStatus::Interrupted;
-                entry.updated_at = Utc::now();
-                entry.terminal_event = None;
-            }
+            entry.status = AgentCommandStatus::Interrupted;
+            entry.updated_at = Utc::now();
+            entry.terminal_event = None;
         }
 
         persist_inner(&inner)
