@@ -1,3 +1,4 @@
+pub mod agent_reconciliation;
 pub mod agent_gateway;
 pub mod app;
 pub mod config;
