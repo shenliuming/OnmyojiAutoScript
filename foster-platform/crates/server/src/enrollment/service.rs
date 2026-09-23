@@ -158,7 +158,11 @@ impl EnrollmentService {
 
         let delivered = tokio::time::timeout(
             Duration::from_secs(5),
-            registry.send_command(target.host_id, command),
+            registry.send_command_with_id(
+                target.host_id,
+                login_command_id(&target.session_no),
+                command,
+            ),
         )
         .await;
 
@@ -473,4 +477,15 @@ fn identity_type_name(kind: IdentityType) -> &'static str {
         IdentityType::ServerName => "SERVER_NAME",
         IdentityType::GameUid => "GAME_UID",
     }
+}
+
+
+const LOGIN_COMMAND_NAMESPACE: Uuid = Uuid::from_bytes([
+    0x7a, 0x5d, 0x1e, 0x3b, 0xc4, 0x62, 0x4f, 0x8d,
+    0x91, 0xa7, 0x2e, 0x63, 0xb8, 0x45, 0x0c, 0x11,
+]);
+
+pub fn login_command_id(session_no: &str) -> Uuid {
+    let key = format!("login:{session_no}");
+    Uuid::new_v5(&LOGIN_COMMAND_NAMESPACE, key.as_bytes())
 }
