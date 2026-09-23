@@ -111,9 +111,11 @@ Start script:
 
 Install script:
 - create Windows Scheduled Task running at startup
-- run as SYSTEM
+- run in the configured interactive Windows user session
+- trigger at user logon so GUI emulator vendor hooks stay in the desktop session
 - working directory is deployment folder
 - overwrite existing FosterAgent task idempotently
+- do not default to SYSTEM/Session 0
 
 ## Task 6 — Deployment guide and smoke checklist
 
