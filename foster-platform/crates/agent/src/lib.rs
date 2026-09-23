@@ -5,3 +5,5 @@ pub mod foster;
 pub mod login;
 pub mod runtime;
 pub mod ws;
+
+pub mod outbox;
