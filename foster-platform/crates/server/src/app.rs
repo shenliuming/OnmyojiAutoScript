@@ -1,5 +1,8 @@
 use axum::{
     Extension, Json, Router,
+    extract::State,
+    http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
 };
 use serde_json::{Value, json};
@@ -13,6 +16,7 @@ use crate::{
         sse::login_status_events,
     },
     foster_dispatch::FosterDispatchService,
+    host_admin::{admin_list_hosts, admin_upsert_host},
     onboarding::{AdminAuthConfig, admin_onboard, login_page, service_page},
     public_portal::{clear_pause, get_service_status, pause_service, replace_quiet_periods},
     resource_admin::{
@@ -41,8 +45,10 @@ pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) 
 
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/agent/ws", get(ws_handler))
         .route("/admin/onboard", post(admin_onboard))
+        .route("/admin/hosts", post(admin_upsert_host).get(admin_list_hosts))
         .route("/admin/providers", post(admin_upsert_provider))
         .route(
             "/admin/providers/{provider_id}/status",
@@ -84,6 +90,22 @@ pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) 
 
 async fn healthz() -> Json<Value> {
     Json(json!({ "status": "ok" }))
+}
+
+async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
+    match sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(1) => (
+            StatusCode::OK,
+            Json(json!({ "status": "ready" })),
+        ),
+        _ => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "status": "not_ready" })),
+        ),
+    }
 }
 
 fn spawn_stale_sweeper(state: AppState) {
