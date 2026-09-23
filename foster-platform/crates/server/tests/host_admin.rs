@@ -293,7 +293,6 @@ async fn host_list_reports_emulator_capacity_and_bindings(pool: MySqlPool) -> an
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
 async fn emulator_capacity_can_be_configured_without_sql(pool: MySqlPool) -> anyhow::Result<()> {
     let host_id = sqlx::query(
@@ -325,9 +324,7 @@ async fn emulator_capacity_can_be_configured_without_sql(pool: MySqlPool) -> any
                 .uri(format!("/admin/emulators/{emulator_id}/capacity"))
                 .header("content-type", "application/json")
                 .header(AUTHORIZATION, "Bearer admin-secret")
-                .body(Body::from(
-                    json!({ "maxAccountCount": 3 }).to_string(),
-                ))?,
+                .body(Body::from(json!({ "maxAccountCount": 3 }).to_string()))?,
         )
         .await?;
 
