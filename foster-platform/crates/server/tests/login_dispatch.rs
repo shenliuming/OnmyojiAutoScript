@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use foster_protocol::ServerCommand;
 use foster_server::{
     agent_gateway::registry::{AgentPresence, AgentRegistry},
-    enrollment::{DispatchLoginResult, EnrollmentService},
+    enrollment::{DispatchLoginResult, EnrollmentService, login_command_id},
 };
 use sqlx::MySqlPool;
 use uuid::Uuid;
@@ -70,6 +70,12 @@ fn presence(host_id: i64, connection_id: Uuid) -> AgentPresence {
     }
 }
 
+#[test]
+fn login_command_id_is_stable_per_session() {
+    assert_eq!(login_command_id("LOGIN-A"), login_command_id("LOGIN-A"));
+    assert_ne!(login_command_id("LOGIN-A"), login_command_id("LOGIN-B"));
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn online_host_receives_start_login(pool: MySqlPool) -> anyhow::Result<()> {
     let fixture = seed_fixture(&pool, "online").await?;
@@ -91,6 +97,11 @@ async fn online_host_receives_start_login(pool: MySqlPool) -> anyhow::Result<()>
     let outbound = tokio::time::timeout(Duration::from_secs(1), rx.recv())
         .await?
         .expect("current agent should receive START_LOGIN");
+
+    assert_eq!(
+        outbound.envelope.command_id,
+        login_command_id(&fixture.session_no)
+    );
 
     match &outbound.envelope.payload {
         ServerCommand::StartLogin(command) => {
