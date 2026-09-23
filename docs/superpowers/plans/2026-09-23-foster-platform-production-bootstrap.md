@@ -7,10 +7,11 @@
 1. Fix production environment templates.
 2. Add database readiness endpoint.
 3. Add authenticated Host bootstrap/admin API.
-4. Add Server production Docker image + compose stack.
-5. Add Windows Agent env loader/start script + optional startup scheduled-task installer.
-6. Add first-host deployment and smoke-test documentation.
-7. One final CI gate only.
+4. Add emulator inventory/capacity admin API so max account count never requires manual SQL.
+5. Add Server production Docker image + compose stack.
+6. Add Windows Agent env loader/start script + interactive-user scheduled-task installer.
+7. Add first-host deployment and smoke-test documentation.
+8. One final CI gate only.
 
 ## Task 1 — Environment templates
 
@@ -79,6 +80,18 @@ GET lists host status plus emulator counts:
 - onlineEmulators
 - configuredCapacity
 - boundAccounts
+
+
+
+### Emulator operations
+
+- GET /admin/hosts/{host_id}/emulators
+- PUT /admin/emulators/{emulator_id}/capacity
+
+Capacity:
+- integer 1..100;
+- persists across Agent snapshots;
+- removes the need for direct SQL when one emulator has a different account-slot limit.
 
 ## Task 4 — Server Docker deployment
 
