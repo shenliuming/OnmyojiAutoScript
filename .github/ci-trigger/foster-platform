@@ -1,3 +1,3 @@
-phase=resource-admin
-head=c2c7c0dbb5488f1d547349599e7b12e4f4e8826c
-reason=final-verification-clippy
+phase=10
+head=246f028ddb5edb36a9078953a646b5a26b6ba1ea
+reason=production-bootstrap-final-verification
