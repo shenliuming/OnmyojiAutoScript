@@ -12,14 +12,15 @@ use sqlx::MySqlPool;
 use uuid::Uuid;
 
 use crate::{
-    agent_gateway::registry::AgentRegistry,
+    agent_gateway::registry::{AgentRegistry, AgentSendError},
     resource_pool::{ReserveForJobResult, ResourcePoolError, ResourcePoolService},
     scheduler::{SchedulerError, SchedulerService},
 };
 
 use super::repository::{
     FosterDispatchTargetRow, FosterIdentityRow, current_job_retry_count, current_job_status,
-    job_belongs_to_host, load_dispatch_target, load_identity_rows, set_job_screenshot_url,
+    job_belongs_to_host, load_dispatch_target, load_identity_rows, mark_dispatch_delivery_uncertain,
+    set_job_screenshot_url,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -44,6 +45,7 @@ pub enum FosterDispatchError {
 pub enum DispatchFosterResult {
     Dispatched,
     WaitingEmulator,
+    RecoveryRequired,
     RejectedIdentity,
     AlreadyHandled,
     WaitingResource,
@@ -155,21 +157,35 @@ impl FosterDispatchService {
 
         match delivered {
             Ok(Ok(())) => Ok(DispatchFosterResult::Dispatched),
-            Ok(Err(_)) | Err(_) => {
+            Ok(Err(AgentSendError::Offline | AgentSendError::QueueClosed)) => {
+                // Definitively not queued on an active WebSocket.
                 if resource_mode == ResourceMode::Platform {
                     ResourcePoolService::new(self.pool.clone())
-                        .release_for_job(job_id, "agent command delivery failed", now)
+                        .release_for_job(job_id, "agent was offline before delivery", now)
                         .await?;
                 }
                 self.scheduler
                     .handle_failure(
                         job_id,
                         FosterErrorCode::EmulatorOffline,
-                        "agent command delivery failed",
+                        "agent was offline before delivery",
                         now,
                     )
                     .await?;
                 Ok(DispatchFosterResult::WaitingEmulator)
+            }
+            Ok(Err(AgentSendError::DeliveryClosed | AgentSendError::DeliveryFailed(_)))
+            | Err(_) => {
+                // The Agent may already have received the command. Never
+                // release the resource allocation or blindly retry.
+                let marked =
+                    mark_dispatch_delivery_uncertain(&self.pool, job_id, target.retry_count)
+                        .await?;
+                Ok(if marked {
+                    DispatchFosterResult::RecoveryRequired
+                } else {
+                    DispatchFosterResult::AlreadyHandled
+                })
             }
         }
     }
