@@ -310,7 +310,9 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                     "EMULATOR_DISCOVERY".to_string(),
                     "LOGIN_EXECUTION".to_string(),
                     "FOSTER_EXECUTION".to_string(),
+                    "COMMAND_JOURNAL_V1".to_string(),
                 ],
+                command_states: Vec::new(),
             }),
         )
         .await
