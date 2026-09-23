@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     agent_gateway::{auth::is_authorized, registry::AgentPresence},
+    agent_reconciliation::AgentReconciliationService,
     app::AppState,
     control_plane::repository::{
         host_exists, mark_host_offline, mark_host_online, touch_host_heartbeat,
@@ -83,6 +84,18 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         state
             .registry
             .remove_if_current(hello.host_id, connection_id);
+        return;
+    }
+
+    if AgentReconciliationService::new(state.pool.clone())
+        .reconcile(hello.host_id, &hello.command_states)
+        .await
+        .is_err()
+    {
+        state
+            .registry
+            .remove_if_current(hello.host_id, connection_id);
+        let _ = mark_host_offline(&state.pool, hello.host_id).await;
         return;
     }
 
