@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use foster_agent::{
-    config::AgentConfig, emulator::GenericAdbEmulatorDriver, foster::HttpOasFosterExecutor,
-    login::HttpOasLoginExecutor, runtime::AgentRuntime,
+    command_journal::CommandJournal, config::AgentConfig, emulator::GenericAdbEmulatorDriver,
+    foster::HttpOasFosterExecutor, login::HttpOasLoginExecutor, runtime::AgentRuntime,
 };
 
 #[tokio::main]
@@ -17,6 +17,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent_token = std::env::var("FOSTER_AGENT_TOKEN")?;
     let agent_id = std::env::var("FOSTER_AGENT_ID")?;
     let host_id = std::env::var("FOSTER_HOST_ID")?.parse::<i64>()?;
+    let journal_path = std::env::var("FOSTER_COMMAND_JOURNAL_PATH")
+        .unwrap_or_else(|_| "command-journal.json".to_string());
+    let command_journal = CommandJournal::open(&journal_path)?;
 
     let emulators_json = std::env::var("FOSTER_EMULATORS_JSON")?;
     let adb_program = std::env::var("FOSTER_ADB_PATH").unwrap_or_else(|_| "adb".to_string());
@@ -50,6 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(
         oas_base_url = %oas_base_url,
         emulator_count = driver.oas_config_map().len(),
+        command_journal = %journal_path,
         "starting foster agent with generic adb host runtime"
     );
 
@@ -68,7 +72,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let runtime = AgentRuntime::new(config, driver)
         .with_login_executor(login_executor)
-        .with_foster_executor(foster_executor);
+        .with_foster_executor(foster_executor)
+        .with_command_journal(command_journal);
 
     runtime.run().await?;
     Ok(())
