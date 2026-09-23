@@ -487,3 +487,152 @@ async fn finished_switching_command_is_redispatched_for_cached_result(
     assert_eq!(report.redispatch_job_ids, vec![fixture.job_id]);
     Ok(())
 }
+
+async fn attach_platform_reservation(
+    pool: &MySqlPool,
+    fixture: &Fixture,
+) -> anyhow::Result<(i64, i64)> {
+    let (account_id, subscription_id): (i64, i64) = sqlx::query_as(
+        "SELECT game_account_id, subscription_id FROM foster_job WHERE id = ?",
+    )
+    .bind(fixture.job_id)
+    .fetch_one(pool)
+    .await?;
+
+    sqlx::query(
+        "UPDATE foster_subscription SET resource_mode = 'PLATFORM',
+                resource_type = 'FISH' WHERE id = ?",
+    )
+    .bind(subscription_id)
+    .execute(pool)
+    .await?;
+
+    let provider_id = sqlx::query(
+        "INSERT INTO provider_account(
+            provider_code, nickname, provider_alias, status
+         ) VALUES ('RECONCILE-PROVIDER', 'resources', 'reconcile-resource', 'ACTIVE')",
+    )
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    let now = Utc::now();
+    let cycle_id = sqlx::query(
+        "INSERT INTO foster_resource_cycle(
+            provider_account_id, resource_type, resource_level, start_at,
+            end_at, slot_capacity, occupied_slots, status
+         ) VALUES (?, 'FISH', 6, ?, ?, 1, 1, 'FULL')",
+    )
+    .bind(provider_id)
+    .bind((now - chrono::Duration::hours(1)).naive_utc())
+    .bind((now + chrono::Duration::hours(8)).naive_utc())
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    let allocation_id = sqlx::query(
+        "INSERT INTO foster_resource_allocation(
+            job_id, resource_cycle_id, provider_account_id, status, reserved_at
+         ) VALUES (?, ?, ?, 'RESERVED', ?)",
+    )
+    .bind(fixture.job_id)
+    .bind(cycle_id)
+    .bind(provider_id)
+    .bind(now.naive_utc())
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+
+    sqlx::query(
+        "UPDATE foster_job SET provider_account_id = ?,
+                resource_cycle_id = ?, resource_allocation_id = ?
+         WHERE id = ? AND game_account_id = ?",
+    )
+    .bind(provider_id)
+    .bind(cycle_id)
+    .bind(allocation_id)
+    .bind(fixture.job_id)
+    .bind(account_id)
+    .execute(pool)
+    .await?;
+
+    Ok((allocation_id, cycle_id))
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn interrupted_platform_job_holds_reservation_until_natural_end(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "platform-interrupted", "RUNNING", 2).await?;
+    let (allocation_id, cycle_id) = attach_platform_reservation(&pool, &fixture).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let report = service
+        .reconcile(
+            fixture.host_id,
+            &[command_state(&fixture, AgentCommandStatus::Interrupted)],
+        )
+        .await?;
+
+    assert_eq!(report.recovery_required, 1);
+    assert_eq!(job_status(&pool, fixture.job_id).await?.0, "RECOVERY_REQUIRED");
+
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM foster_resource_allocation WHERE id = ?",
+    )
+    .bind(allocation_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(status, "RESERVED");
+
+    let occupied: i32 = sqlx::query_scalar(
+        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
+    )
+    .bind(cycle_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(occupied, 1);
+
+    let report = foster_server::resource_pool::ResourcePoolService::new(pool.clone())
+        .reap(Utc::now() + chrono::Duration::hours(9))
+        .await?;
+    assert_eq!(report.expired_allocations, 1);
+
+    let after_reap: i32 = sqlx::query_scalar(
+        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
+    )
+    .bind(cycle_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(after_reap, 0);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn missing_agent_platform_command_does_not_free_reserved_slot(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "platform-missing", "RUNNING", 0).await?;
+    let (allocation_id, cycle_id) = attach_platform_reservation(&pool, &fixture).await?;
+    let report = AgentReconciliationService::new(pool.clone())
+        .reconcile(fixture.host_id, &[])
+        .await?;
+
+    assert_eq!(report.recovery_required, 1);
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM foster_resource_allocation WHERE id = ?",
+    )
+    .bind(allocation_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(status, "RESERVED");
+
+    let occupied: i32 = sqlx::query_scalar(
+        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
+    )
+    .bind(cycle_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(occupied, 1);
+    Ok(())
+}
