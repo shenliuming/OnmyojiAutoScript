@@ -349,40 +349,45 @@ impl RecoveryService {
         if subscription.status != "ACTIVE" {
             return Err(RecoveryError::SubscriptionUnavailable);
         }
-        if let Some(allocation) = allocation {
-            if allocation.status == "EXPIRED" {
-                // Reap already released this slot at the resource cycle's natural end.
-                // The operator can still verify that no foster happened and retry.
-            } else if allocation.status == "RESERVED" {
+
+        let allocation_status = match allocation {
+            Some(allocation) if allocation.status == "RESERVED" => {
                 sqlx::query(
                     "UPDATE foster_resource_allocation
-                 SET status = 'RELEASED', released_at = ?,
-                     release_reason = 'operator verified no foster execution'
-                 WHERE id = ? AND status = 'RESERVED'",
-            )
-            .bind(now.naive_utc())
-            .bind(allocation.id)
-            .execute(&mut **tx)
-            .await?;
+                     SET status = 'RELEASED', released_at = ?,
+                         release_reason = 'operator verified no foster execution'
+                     WHERE id = ? AND status = 'RESERVED'",
+                )
+                .bind(now.naive_utc())
+                .bind(allocation.id)
+                .execute(&mut **tx)
+                .await?;
 
-            sqlx::query(
-                "UPDATE foster_resource_cycle
-                 SET occupied_slots = GREATEST(occupied_slots - 1, 0),
-                     status = CASE
-                         WHEN status = 'DISABLED' THEN 'DISABLED'
-                         WHEN end_at <= ? THEN 'ENDED'
-                         ELSE 'AVAILABLE'
-                     END
-                 WHERE id = ?",
-            )
-            .bind(now.naive_utc())
+                sqlx::query(
+                    "UPDATE foster_resource_cycle
+                     SET occupied_slots = GREATEST(occupied_slots - 1, 0),
+                         status = CASE
+                             WHEN status = 'DISABLED' THEN 'DISABLED'
+                             WHEN end_at <= ? THEN 'ENDED'
+                             ELSE 'AVAILABLE'
+                         END
+                     WHERE id = ?",
+                )
+                .bind(now.naive_utc())
                 .bind(allocation.resource_cycle_id)
                 .execute(&mut **tx)
                 .await?;
-            } else {
-                return Err(RecoveryError::AllocationUnavailable);
+
+                Some("RELEASED".to_string())
             }
-        }
+            Some(allocation) if allocation.status == "EXPIRED" => {
+                // ResourcePool reaped the allocation after its natural expiry.
+                // Do not decrement that cycle's capacity for a second time.
+                Some("EXPIRED".to_string())
+            }
+            Some(_) => return Err(RecoveryError::AllocationUnavailable),
+            None => None,
+        };
 
         let retry_after = now + chrono::Duration::minutes(5);
         sqlx::query(
@@ -405,13 +410,7 @@ impl RecoveryService {
             status: "RETRY".to_string(),
             next_run_at: None,
             retry_after: Some(retry_after),
-            allocation_status: allocation.map(|a| {
-                if a.status == "EXPIRED" {
-                    "EXPIRED".to_string()
-                } else {
-                    "RELEASED".to_string()
-                }
-            }),
+            allocation_status,
         })
     }
 }
