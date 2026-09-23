@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use axum::{
-    body::Body,
+    body::{Body, to_bytes},
     http::{Request, StatusCode, header::AUTHORIZATION},
 };
 use chrono::{TimeZone, Utc};
@@ -447,6 +447,35 @@ async fn recovery_endpoints_require_admin_token_and_list_pending_jobs(
         )
         .await?;
     assert_eq!(listed.status(), StatusCode::OK);
+    let body = to_bytes(listed.into_body(), 1024 * 1024).await?;
+    let jobs: serde_json::Value = serde_json::from_slice(&body)?;
+    assert_eq!(jobs.as_array().map(|values| values.len()), Some(1));
+    assert_eq!(jobs[0]["jobId"].as_i64(), Some(fixture.job_id));
+    assert_eq!(jobs[0]["allocationStatus"].as_str(), Some("RESERVED"));
+
+    let resolved = build_app_with_admin_token(
+        app_state(pool.clone()),
+        Some("admin-secret".into()),
+    )
+    .oneshot(
+        Request::builder()
+            .method("POST")
+            .uri(format!("/admin/recovery-jobs/{}/resolve", fixture.job_id))
+            .header("content-type", "application/json")
+            .header(AUTHORIZATION, "Bearer admin-secret")
+            .body(Body::from(
+                serde_json::json!({
+                    "expectedAttempt": 2,
+                    "action": "CONFIRM_NOT_EXECUTED",
+                    "operator": "ops-01",
+                    "note": "verified old OAS process stopped",
+                    "confirmedStopped": true
+                })
+                .to_string(),
+            ))?,
+    )
+    .await?;
+    assert_eq!(resolved.status(), StatusCode::OK);
     Ok(())
 }
 
