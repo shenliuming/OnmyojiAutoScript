@@ -168,6 +168,71 @@ impl CommandJournal {
         Ok(CommandDecision::StartNew)
     }
 
+    pub fn begin_login(
+        &self,
+        command_id: Uuid,
+        session_no: &str,
+    ) -> Result<CommandDecision, CommandJournalError> {
+        let execution_key = login_execution_key(session_no);
+        let mut inner = self.lock()?;
+
+        if let Some(entry) = inner
+            .entries
+            .iter()
+            .find(|entry| {
+                entry.command_id == command_id || entry.execution_key == execution_key
+            })
+            .cloned()
+        {
+            return Ok(match entry.status {
+                AgentCommandStatus::Running => CommandDecision::AlreadyRunning,
+                AgentCommandStatus::Finished => entry
+                    .terminal_event
+                    .map(CommandDecision::ReplayFinished)
+                    .unwrap_or(CommandDecision::Interrupted),
+                AgentCommandStatus::Interrupted => CommandDecision::Interrupted,
+            });
+        }
+
+        inner.entries.push(JournalEntry {
+            command_id,
+            execution_key,
+            kind: AgentCommandKind::Login,
+            status: AgentCommandStatus::Running,
+            job_id: None,
+            attempt: None,
+            session_no: Some(session_no.to_string()),
+            updated_at: Utc::now(),
+            terminal_event: None,
+        });
+
+        prune_entries(&mut inner);
+        persist_inner(&inner)?;
+        Ok(CommandDecision::StartNew)
+    }
+
+    pub fn interrupt_login(
+        &self,
+        session_no: &str,
+    ) -> Result<(), CommandJournalError> {
+        let execution_key = login_execution_key(session_no);
+        let mut inner = self.lock()?;
+
+        if let Some(entry) = inner
+            .entries
+            .iter_mut()
+            .find(|entry| entry.execution_key == execution_key)
+        {
+            if entry.status == AgentCommandStatus::Running {
+                entry.status = AgentCommandStatus::Interrupted;
+                entry.updated_at = Utc::now();
+                entry.terminal_event = None;
+            }
+        }
+
+        persist_inner(&inner)
+    }
+
     pub fn finish(
         &self,
         command_id: Uuid,
@@ -230,6 +295,10 @@ impl CommandJournal {
 
 pub fn foster_execution_key(job_id: i64, attempt: i32) -> String {
     format!("foster:{job_id}:{attempt}")
+}
+
+pub fn login_execution_key(session_no: &str) -> String {
+    format!("login:{session_no}")
 }
 
 fn prune_entries(inner: &mut JournalInner) {
@@ -343,6 +412,36 @@ mod tests {
         assert!(matches!(
             journal.begin_foster(command_id, 9, 0).unwrap(),
             CommandDecision::ReplayFinished(AgentEvent::FosterFailed(_))
+        ));
+    }
+
+    #[test]
+    fn same_login_session_dedupes_even_with_different_command_id() {
+        let journal = CommandJournal::in_memory();
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+
+        assert!(matches!(
+            journal.begin_login(first, "LOGIN-1").unwrap(),
+            CommandDecision::StartNew
+        ));
+        assert!(matches!(
+            journal.begin_login(second, "LOGIN-1").unwrap(),
+            CommandDecision::AlreadyRunning
+        ));
+    }
+
+    #[test]
+    fn cancelled_login_becomes_interrupted() {
+        let journal = CommandJournal::in_memory();
+        let command_id = Uuid::new_v4();
+
+        journal.begin_login(command_id, "LOGIN-CANCEL").unwrap();
+        journal.interrupt_login("LOGIN-CANCEL").unwrap();
+
+        assert!(matches!(
+            journal.begin_login(command_id, "LOGIN-CANCEL").unwrap(),
+            CommandDecision::Interrupted
         ));
     }
 
