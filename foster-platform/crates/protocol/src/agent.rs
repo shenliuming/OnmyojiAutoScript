@@ -1,6 +1,33 @@
 use chrono::{DateTime, Utc};
 use foster_domain::{EmulatorStatus, FosterErrorCode};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentCommandKind {
+    Foster,
+    Login,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentCommandStatus {
+    Running,
+    Finished,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCommandState {
+    pub command_id: Uuid,
+    pub kind: AgentCommandKind,
+    pub status: AgentCommandStatus,
+    pub job_id: Option<i64>,
+    pub attempt: Option<i32>,
+    pub session_no: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentHello {
@@ -10,6 +37,8 @@ pub struct AgentHello {
     pub hostname: String,
     pub os_version: String,
     pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub command_states: Vec<AgentCommandState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
