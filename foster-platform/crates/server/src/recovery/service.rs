@@ -30,7 +30,7 @@ pub struct ResolveRecoveryRequest {
     pub confirmed_stopped: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryJobView {
     pub job_id: i64,
@@ -223,7 +223,7 @@ impl RecoveryService {
                 .await?
             }
             RecoveryAction::ConfirmNotExecuted => {
-                self.confirm_not_executed(&mut tx, &job, allocation.as_ref(), now)
+                self.confirm_not_executed(&mut tx, &job, &subscription, allocation.as_ref(), now)
                     .await?
             }
         };
@@ -342,9 +342,13 @@ impl RecoveryService {
         &self,
         tx: &mut Transaction<'_, MySql>,
         job: &LockedJob,
+        subscription: &LockedSubscription,
         allocation: Option<&LockedAllocation>,
         now: DateTime<Utc>,
     ) -> Result<RecoveryResolutionResult, RecoveryError> {
+        if subscription.status != "ACTIVE" {
+            return Err(RecoveryError::SubscriptionUnavailable);
+        }
         if let Some(allocation) = allocation {
             if allocation.status != "RESERVED" {
                 return Err(RecoveryError::AllocationUnavailable);
