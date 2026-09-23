@@ -160,11 +160,22 @@ FOSTER_EMULATORS_JSON=[{"emulatorCode":"emu-01","adbSerial":"127.0.0.1:16384","o
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-FosterAgent.ps1
 ```
 
-确认稳定后再安装开机自启：
+确认稳定后再安装登录自启：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-FosterAgentTask.ps1 -AgentDir C:\FosterAgent
 Start-ScheduledTask -TaskName FosterAgent
+```
+
+默认使用**当前 Windows 交互用户**并在该用户登录后启动，不使用 SYSTEM。  
+原因是 MuMu/雷电等 GUI 模拟器及其厂商启动命令需要和桌面会话保持一致，放到 Session 0 可能出现模拟器已启动但不可交互的问题。
+
+如果使用专门的宿主机账号，可显式指定：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-FosterAgentTask.ps1 \
+  -AgentDir C:\FosterAgent \
+  -RunAsUser "MACHINE\foster"
 ```
 
 ## 5. 验证 Host / Emulator 在线
@@ -183,6 +194,22 @@ curl http://SERVER:8080/admin/hosts \
 - `lastHeartbeatAt` 持续刷新
 - `totalEmulators > 0`
 - ADB 正常的模拟器计入 `onlineEmulators`
+
+查看这台 Host 的模拟器：
+
+```bash
+curl http://SERVER:8080/admin/hosts/1/emulators \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
+```
+
+如果某个模拟器允许绑定的账号数不是默认值，可直接配置，不需要改 SQL：
+
+```bash
+curl -X PUT http://SERVER:8080/admin/emulators/1/capacity \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"maxAccountCount":3}'
+```
 
 如果 Host 一直 OFFLINE，优先检查：
 
