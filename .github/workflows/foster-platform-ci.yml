@@ -13,6 +13,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-agent:
+    uses: ./.github/workflows/foster-agent-windows-package.yml
+    with:
+      package_label: ci-${{ github.run_number }}
+
   rust:
     runs-on: ubuntu-latest
     services:

@@ -132,7 +132,7 @@ foster-agent.exe.sha256
 build-metadata.json
 ```
 
-workflow 只支持手动 `workflow_dispatch`，普通 push 不会自动创建 Windows 包，也不会自动创建 GitHub Release。包中不包含 Agent token、Admin token 或其他密钥。
+Windows 包仍可通过独立的手动 `workflow_dispatch` 构建。阶段末更新 `.github/ci-trigger/foster-platform` 时，完整 CI 也会调用同一套 Windows 构建与打包流程，并检查 zip、EXE SHA-256、文件清单及脚本语法；平时的代码 push 不运行它。CI 的 Windows artifact 可用于首机预部署验证，但真正的模拟器/OAS 联调仍须在 Windows 宿主机完成。包中不包含 Agent token、Admin token 或其他密钥，也不会自动创建 GitHub Release。
 
 把内容解压到例如：
 

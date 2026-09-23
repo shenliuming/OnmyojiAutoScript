@@ -7,6 +7,13 @@ on:
         description: Optional human-readable package label
         required: false
         default: manual
+  workflow_call:
+    inputs:
+      package_label:
+        description: Package label used by the final verification workflow
+        type: string
+        required: false
+        default: ci
 
 permissions:
   contents: read
@@ -91,6 +98,83 @@ jobs:
           "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Append
           "PACKAGE_ZIP=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
           "PACKAGE_ZIP_SHA=$zipPath.sha256" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Verify zip, executable checksum, and packaged scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not (Test-Path -LiteralPath $env:PACKAGE_ZIP -PathType Leaf)) {
+            throw "Windows package zip is missing."
+          }
+          if (-not (Test-Path -LiteralPath $env:PACKAGE_ZIP_SHA -PathType Leaf)) {
+            throw "Windows package zip checksum is missing."
+          }
+
+          $shaRow = (Get-Content -LiteralPath $env:PACKAGE_ZIP_SHA -Raw).Trim()
+          if ($shaRow -notmatch '^([0-9a-fA-F]{64})\s+\S+\.zip
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: |
+            ${{ env.PACKAGE_ZIP }}
+            ${{ env.PACKAGE_ZIP_SHA }}
+          if-no-files-found: error
+          retention-days: 30
+) {
+            throw "Invalid Windows package checksum format."
+          }
+          $expectedZipSha = $Matches[1].ToLowerInvariant()
+          $actualZipSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $env:PACKAGE_ZIP).Hash.ToLowerInvariant()
+          if ($actualZipSha -ne $expectedZipSha) {
+            throw "Windows package zip checksum mismatch."
+          }
+
+          $unpacked = Join-Path $PWD "dist/verified-package"
+          Expand-Archive -LiteralPath $env:PACKAGE_ZIP -DestinationPath $unpacked -Force
+          @(
+            "foster-agent.exe",
+            "foster-agent.exe.sha256",
+            "Start-FosterAgent.ps1",
+            "Install-FosterAgentTask.ps1",
+            "Test-FosterHost.ps1",
+            "agent.env.example",
+            "build-metadata.json"
+          ) | ForEach-Object {
+            if (-not (Test-Path -LiteralPath (Join-Path $unpacked $_) -PathType Leaf)) {
+              throw "Missing required package file: $_"
+            }
+          }
+
+          $exeRow = (Get-Content -LiteralPath (Join-Path $unpacked "foster-agent.exe.sha256") -Raw).Trim()
+          if ($exeRow -notmatch '^([0-9a-fA-F]{64})\s+foster-agent\.exe
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: |
+            ${{ env.PACKAGE_ZIP }}
+            ${{ env.PACKAGE_ZIP_SHA }}
+          if-no-files-found: error
+          retention-days: 30
+) {
+            throw "Invalid Agent executable checksum format."
+          }
+          $expectedExeSha = $Matches[1].ToLowerInvariant()
+          $actualExeSha = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $unpacked "foster-agent.exe")).Hash.ToLowerInvariant()
+          if ($actualExeSha -ne $expectedExeSha) {
+            throw "Agent executable checksum mismatch."
+          }
+
+          Get-ChildItem -LiteralPath $unpacked -Filter "*.ps1" | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              throw "Packaged PowerShell script failed parsing: $($_.Name)"
+            }
+          }
+          Write-Host "Windows Agent package integrity checks passed."
 
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
