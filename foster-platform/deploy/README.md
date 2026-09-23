@@ -360,3 +360,49 @@ curl http://SERVER:8080/admin/resource-pool \
 - Admin API 应放在可信网络、VPN 或反向代理鉴权之后。
 - 对公网提供 H5 / Agent WebSocket 时建议使用 HTTPS/WSS。
 - `prod.env`、`agent.env` 不提交 Git。
+
+
+## 10. Agent 中断后的人工恢复
+
+Agent 重启、命令丢失或下发结果不确定时，Job 进入 `RECOVERY_REQUIRED`，**不会自动再执行**。PLATFORM 的 `RESERVED` 名额在核实之前继续占用，不会因为 Agent 断线就释放；资源卡自然到期后，ResourcePool 会按原有过期规则回收。
+
+先查询待核实任务：
+
+```bash
+curl "http://SERVER:8080/admin/recovery-jobs?limit=50" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
+```
+
+管理员必须先查看游戏中实际寄养状态、对应模拟器及 Agent 日志。如果看到了确实成功寄养，记录当前剩余秒数（PLATFORM 必填）：
+
+```bash
+curl -X POST http://SERVER:8080/admin/recovery-jobs/JOB_ID/resolve \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expectedAttempt": 2,
+    "action": "CONFIRM_SUCCEEDED",
+    "operator": "ops-01",
+    "note": "Checked game foster screen; card active",
+    "observedRemainingSeconds": 1800
+  }'
+```
+
+如果确认**从未执行寄养**，而且原 Agent/OAS 执行进程已停止，才能选择重新排队：
+
+```bash
+curl -X POST http://SERVER:8080/admin/recovery-jobs/JOB_ID/resolve \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expectedAttempt": 2,
+    "action": "CONFIRM_NOT_EXECUTED",
+    "operator": "ops-01",
+    "note": "Checked game and stopped previous OAS process",
+    "confirmedStopped": true
+  }'
+```
+
+此操作会在事务中释放仍处于 RESERVED 的资源名额、增加任务 `retry_count`，并在 5 分钟后重新排队。旧 attempt 的迟到事件不会更新新 attempt。所有人工操作写入 `foster_recovery_audit`；重复操作或错误 attempt 会返回冲突。
+
+**无法确认时，不要选择任何动作。** 保留 `RECOVERY_REQUIRED` 和资源占坑，直到核实或资源卡自然到期。确认成功但资源卡已自然到期的历史异常，不应伪造新的剩余时长。
