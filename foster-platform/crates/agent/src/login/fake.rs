@@ -1,4 +1,11 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use foster_protocol::StartLoginCommand;
@@ -21,6 +28,7 @@ pub struct FakeLoginScenario {
 pub struct FakeLoginExecutor {
     scenario: FakeLoginScenario,
     cancelled: Arc<Mutex<HashSet<String>>>,
+    prepare_count: Arc<AtomicUsize>,
 }
 
 impl FakeLoginExecutor {
@@ -28,11 +36,16 @@ impl FakeLoginExecutor {
         Self {
             scenario,
             cancelled: Arc::new(Mutex::new(HashSet::new())),
+            prepare_count: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub async fn was_cancelled(&self, session_no: &str) -> bool {
         self.cancelled.lock().await.contains(session_no)
+    }
+
+    pub fn prepare_count(&self) -> usize {
+        self.prepare_count.load(Ordering::SeqCst)
     }
 
     async fn ensure_not_cancelled(&self, session_no: &str) -> Result<(), LoginExecutorError> {
@@ -50,6 +63,7 @@ impl LoginExecutor for FakeLoginExecutor {
         &self,
         command: &StartLoginCommand,
     ) -> Result<LoginPrepared, LoginExecutorError> {
+        self.prepare_count.fetch_add(1, Ordering::SeqCst);
         self.ensure_not_cancelled(&command.session_no).await?;
 
         Ok(LoginPrepared {
