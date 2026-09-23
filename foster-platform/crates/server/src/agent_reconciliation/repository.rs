@@ -84,12 +84,18 @@ pub async fn list_host_active_login_sessions(
 }
 
 
-pub async fn list_host_switching_foster_job_ids(
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SwitchingFosterJob {
+    pub id: i64,
+    pub retry_count: i32,
+}
+
+pub async fn list_host_switching_foster_jobs(
     pool: &MySqlPool,
     host_id: i64,
-) -> Result<Vec<i64>, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT j.id
+) -> Result<Vec<SwitchingFosterJob>, sqlx::Error> {
+    sqlx::query_as::<_, SwitchingFosterJob>(
+        "SELECT j.id, j.retry_count
          FROM foster_job j
          JOIN emulator_instance e ON e.id = j.emulator_id
          WHERE e.host_id = ?
