@@ -21,12 +21,12 @@ use crate::{
     },
     onboarding::{AdminAuthConfig, admin_onboard, login_page, service_page},
     public_portal::{clear_pause, get_service_status, pause_service, replace_quiet_periods},
+    recovery::{admin_list_recovery_jobs, admin_resolve_recovery_job},
     resource_admin::{
         admin_create_cycle, admin_get_resource_pool, admin_set_cycle_status,
         admin_set_friend_binding, admin_set_provider_status, admin_upsert_provider,
     },
     resource_pool::ResourcePoolService,
-    recovery::{admin_list_recovery_jobs, admin_resolve_recovery_job},
     scheduler::SchedulerService,
 };
 
