@@ -195,12 +195,11 @@ async fn platform_success_keeps_slot_and_schedules_from_observation(
     );
     assert_eq!(result.allocation_status.as_deref(), Some("CONFIRMED"));
 
-    let job: (String, Option<i32>) = sqlx::query_as(
-        "SELECT status, remaining_seconds FROM foster_job WHERE id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let job: (String, Option<i32>) =
+        sqlx::query_as("SELECT status, remaining_seconds FROM foster_job WHERE id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(job, ("SUCCESS".into(), Some(1_800)));
 
     let allocation: (String, Option<chrono::NaiveDateTime>) = sqlx::query_as(
@@ -215,20 +214,18 @@ async fn platform_success_keeps_slot_and_schedules_from_observation(
         Some((at() + chrono::Duration::seconds(1_800)).naive_utc())
     );
 
-    let occupied: i32 = sqlx::query_scalar(
-        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(fixture.cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let occupied: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(fixture.cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(occupied, 1);
 
-    let next: Option<chrono::NaiveDateTime> = sqlx::query_scalar(
-        "SELECT next_run_at FROM foster_subscription WHERE id = ?",
-    )
-    .bind(fixture.subscription_id)
-    .fetch_one(&pool)
-    .await?;
+    let next: Option<chrono::NaiveDateTime> =
+        sqlx::query_scalar("SELECT next_run_at FROM foster_subscription WHERE id = ?")
+            .bind(fixture.subscription_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(
         next,
         Some((at() + chrono::Duration::seconds(1_800)).naive_utc())
@@ -244,12 +241,11 @@ async fn verified_no_execution_releases_exactly_once_and_advances_attempt(
     let service = RecoveryService::new(pool.clone());
     let original = request(RecoveryAction::ConfirmNotExecuted, None);
 
-    let first = service.resolve(fixture.job_id, original.clone(), at()).await?;
+    let first = service
+        .resolve(fixture.job_id, original.clone(), at())
+        .await?;
     assert_eq!(first.status, "RETRY");
-    assert_eq!(
-        first.retry_after,
-        Some(at() + chrono::Duration::minutes(5))
-    );
+    assert_eq!(first.retry_after, Some(at() + chrono::Duration::minutes(5)));
 
     let row: (String, i32, Option<i64>) = sqlx::query_as(
         "SELECT status, retry_count, resource_allocation_id FROM foster_job WHERE id = ?",
@@ -259,20 +255,18 @@ async fn verified_no_execution_releases_exactly_once_and_advances_attempt(
     .await?;
     assert_eq!(row, ("RETRY".into(), 3, None));
 
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_resource_allocation WHERE id = ?",
-    )
-    .bind(fixture.allocation_id)
-    .fetch_one(&pool)
-    .await?;
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM foster_resource_allocation WHERE id = ?")
+            .bind(fixture.allocation_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(status, "RELEASED");
 
-    let occupied: i32 = sqlx::query_scalar(
-        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(fixture.cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let occupied: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(fixture.cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(occupied, 0);
 
     assert!(matches!(
@@ -280,12 +274,11 @@ async fn verified_no_execution_releases_exactly_once_and_advances_attempt(
         Err(RecoveryError::StateConflict)
     ));
 
-    let audit_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM foster_recovery_audit WHERE job_id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let audit_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM foster_recovery_audit WHERE job_id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(audit_count, 1);
     Ok(())
 }
@@ -303,12 +296,11 @@ async fn wrong_attempt_does_not_release_reservation(pool: MySqlPool) -> anyhow::
         Err(RecoveryError::AttemptMismatch)
     ));
 
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_resource_allocation WHERE id = ?",
-    )
-    .bind(fixture.allocation_id)
-    .fetch_one(&pool)
-    .await?;
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM foster_resource_allocation WHERE id = ?")
+            .bind(fixture.allocation_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(status, "RESERVED");
     Ok(())
 }
@@ -327,12 +319,11 @@ async fn uncertain_platform_success_without_remaining_duration_is_rejected(
         .await;
 
     assert!(matches!(result, Err(RecoveryError::RemainingRequired)));
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_resource_allocation WHERE id = ?",
-    )
-    .bind(fixture.allocation_id)
-    .fetch_one(&pool)
-    .await?;
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM foster_resource_allocation WHERE id = ?")
+            .bind(fixture.allocation_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(status, "RESERVED");
     Ok(())
 }
@@ -342,12 +333,10 @@ async fn already_confirmed_resource_cannot_be_released_as_no_execution(
     pool: MySqlPool,
 ) -> anyhow::Result<()> {
     let fixture = seed_recovery(&pool, true).await?;
-    sqlx::query(
-        "UPDATE foster_resource_allocation SET status = 'CONFIRMED' WHERE id = ?",
-    )
-    .bind(fixture.allocation_id)
-    .execute(&pool)
-    .await?;
+    sqlx::query("UPDATE foster_resource_allocation SET status = 'CONFIRMED' WHERE id = ?")
+        .bind(fixture.allocation_id)
+        .execute(&pool)
+        .await?;
 
     assert!(matches!(
         RecoveryService::new(pool.clone())
@@ -360,12 +349,11 @@ async fn already_confirmed_resource_cannot_be_released_as_no_execution(
         Err(RecoveryError::AllocationUnavailable)
     ));
 
-    let occupied: i32 = sqlx::query_scalar(
-        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(fixture.cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let occupied: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(fixture.cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(occupied, 1);
     Ok(())
 }
@@ -492,12 +480,11 @@ async fn operator_must_confirm_old_executor_stopped(pool: MySqlPool) -> anyhow::
         Err(RecoveryError::MustConfirmStopped)
     ));
 
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM foster_resource_allocation WHERE id = ?",
-    )
-    .bind(fixture.allocation_id)
-    .fetch_one(&pool)
-    .await?;
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM foster_resource_allocation WHERE id = ?")
+            .bind(fixture.allocation_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(status, "RESERVED");
     Ok(())
 }
@@ -524,20 +511,17 @@ async fn expired_platform_reservation_is_not_released_twice_during_manual_retry(
     assert_eq!(result.status, "RETRY");
     assert_eq!(result.allocation_status.as_deref(), Some("EXPIRED"));
 
-    let occupied: i32 = sqlx::query_scalar(
-        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(fixture.cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let occupied: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(fixture.cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(occupied, 0);
     Ok(())
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn concurrent_operator_resolutions_only_apply_once(
-    pool: MySqlPool,
-) -> anyhow::Result<()> {
+async fn concurrent_operator_resolutions_only_apply_once(pool: MySqlPool) -> anyhow::Result<()> {
     let fixture = seed_recovery(&pool, true).await?;
     let first = RecoveryService::new(pool.clone());
     let second = RecoveryService::new(pool.clone());
@@ -548,22 +532,26 @@ async fn concurrent_operator_resolutions_only_apply_once(
         second.resolve(fixture.job_id, resolution, at()),
     );
 
-    assert_eq!([left.is_ok(), right.is_ok()].iter().filter(|value| **value).count(), 1);
+    assert_eq!(
+        [left.is_ok(), right.is_ok()]
+            .iter()
+            .filter(|value| **value)
+            .count(),
+        1
+    );
 
-    let occupied: i32 = sqlx::query_scalar(
-        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
-    )
-    .bind(fixture.cycle_id)
-    .fetch_one(&pool)
-    .await?;
+    let occupied: i32 =
+        sqlx::query_scalar("SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?")
+            .bind(fixture.cycle_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(occupied, 0);
 
-    let audit_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM foster_recovery_audit WHERE job_id = ?",
-    )
-    .bind(fixture.job_id)
-    .fetch_one(&pool)
-    .await?;
+    let audit_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM foster_recovery_audit WHERE job_id = ?")
+            .bind(fixture.job_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(audit_count, 1);
     Ok(())
 }
