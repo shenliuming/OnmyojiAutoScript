@@ -8,7 +8,7 @@ pub mod foster_dispatch;
 pub mod host_admin;
 pub mod onboarding;
 pub mod public_portal;
+pub mod recovery;
 pub mod resource_admin;
 pub mod resource_pool;
-pub mod recovery;
 pub mod scheduler;
