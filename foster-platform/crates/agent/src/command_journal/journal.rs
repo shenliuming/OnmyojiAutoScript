@@ -294,3 +294,82 @@ fn temp_path(path: &Path) -> PathBuf {
     value.push(".tmp");
     PathBuf::from(value)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use foster_domain::FosterErrorCode;
+    use foster_protocol::{AgentCommandStatus, FosterFailed};
+
+    use super::*;
+
+    fn terminal_event(job_id: i64, attempt: i32) -> AgentEvent {
+        AgentEvent::FosterFailed(FosterFailed {
+            job_id,
+            attempt,
+            failed_at: Utc::now(),
+            error_code: FosterErrorCode::NetworkError,
+            message: "test".into(),
+            screenshot_url: None,
+        })
+    }
+
+    #[test]
+    fn same_execution_key_dedupes_even_with_different_command_id() {
+        let journal = CommandJournal::in_memory();
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+
+        assert!(matches!(
+            journal.begin_foster(first, 7, 2).unwrap(),
+            CommandDecision::StartNew
+        ));
+        assert!(matches!(
+            journal.begin_foster(second, 7, 2).unwrap(),
+            CommandDecision::AlreadyRunning
+        ));
+    }
+
+    #[test]
+    fn finished_command_replays_cached_terminal_event() {
+        let journal = CommandJournal::in_memory();
+        let command_id = Uuid::new_v4();
+
+        journal.begin_foster(command_id, 9, 0).unwrap();
+        journal
+            .finish(command_id, terminal_event(9, 0))
+            .unwrap();
+
+        assert!(matches!(
+            journal.begin_foster(command_id, 9, 0).unwrap(),
+            CommandDecision::ReplayFinished(AgentEvent::FosterFailed(_))
+        ));
+    }
+
+    #[test]
+    fn persisted_running_command_becomes_interrupted_after_reload() {
+        let path = std::env::temp_dir().join(format!(
+            "foster-command-journal-{}.json",
+            Uuid::new_v4()
+        ));
+        let command_id = Uuid::new_v4();
+
+        {
+            let journal = CommandJournal::open(&path).unwrap();
+            journal.begin_foster(command_id, 11, 3).unwrap();
+        }
+
+        let journal = CommandJournal::open(&path).unwrap();
+        let states = journal.states().unwrap();
+
+        assert_eq!(states.len(), 1);
+        assert_eq!(states[0].command_id, command_id);
+        assert_eq!(states[0].status, AgentCommandStatus::Interrupted);
+        assert!(matches!(
+            journal.begin_foster(command_id, 11, 3).unwrap(),
+            CommandDecision::Interrupted
+        ));
+
+        let _ = std::fs::remove_file(path);
+    }
+}
