@@ -107,32 +107,44 @@ emu-02 -> oas-emu-02
 
 `FOSTER_EMULATORS_JSON` 里的 `oasConfigName` 必须与实际 OAS config 名一致。
 
-## 4. 编译 / 放置 Windows Agent
+## 4. 下载 / 放置 Windows Agent
 
-在 Windows Rust 环境：
+首机验证后，推荐使用 GitHub Actions 构建好的 Windows 包，不要求每台宿主机安装 Rust。
 
-```powershell
-cd foster-platform
-cargo build --release -p foster-agent
+在 GitHub 仓库：
+
+1. 打开 **Actions**；
+2. 选择 **Build Foster Agent Windows Package**；
+3. 点击 **Run workflow**；
+4. 可选填写 `package_label`，例如 `host-01` 或 `2026-09-23`；
+5. 等 workflow 完成后下载同名 artifact；
+6. 解压其中的 zip，并校验旁边的 `.zip.sha256`。
+
+包内包含：
+
+```text
+foster-agent.exe
+Start-FosterAgent.ps1
+Install-FosterAgentTask.ps1
+Test-FosterHost.ps1
+agent.env.example
+foster-agent.exe.sha256
+build-metadata.json
 ```
 
-准备目录，例如：
+workflow 只支持手动 `workflow_dispatch`，普通 push 不会自动创建 Windows 包，也不会自动创建 GitHub Release。包中不包含 Agent token、Admin token 或其他密钥。
+
+把内容解压到例如：
 
 ```text
 C:\FosterAgent\
-├── foster-agent.exe
-├── Start-FosterAgent.ps1
-├── Install-FosterAgentTask.ps1
-└── agent.env
 ```
 
-从：
+复制配置：
 
-```text
-deploy/windows/agent.env.example
+```powershell
+Copy-Item .\agent.env.example .\agent.env
 ```
-
-复制为 `agent.env`。
 
 至少修改：
 
@@ -150,15 +162,43 @@ FOSTER_AGENT_TOKEN=your-shared-agent-token
 FOSTER_AGENT_ID=host-01-agent
 FOSTER_HOST_ID=1
 FOSTER_OAS_BASE_URL=http://127.0.0.1:22270
-FOSTER_ADB_PATH=C:\Android\platform-tools\adb.exe
+FOSTER_ADB_PATH=C:\\Android\\platform-tools\\adb.exe
 FOSTER_EMULATORS_JSON=[{"emulatorCode":"emu-01","adbSerial":"127.0.0.1:16384","oasConfigName":"oas-emu-01","packageName":"com.netease.onmyoji","startProgram":null,"startArgs":[],"stopProgram":null,"stopArgs":[],"loginPrepareProgram":null,"loginPrepareArgs":[],"loginPrepareDelayMs":3000}]
 ```
 
-先前台启动：
+### 4.1 先跑宿主机 Smoke
+
+在真正启动 Agent 前执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-FosterHost.ps1
+```
+
+脚本只做只读检查，不启动/停止模拟器，也不会操作游戏。它会检查：
+
+- Server `/readyz`；
+- 本地 OAS `/openapi.json`；
+- `agent.env` 必填变量；
+- `FOSTER_EMULATORS_JSON`；
+- ADB executable；
+- 每个配置模拟器的 `adb -s <serial> get-state`；
+- `emulatorCode / adbSerial / oasConfigName` 是否齐全。
+
+只有看到：
+
+```text
+Foster host preflight passed.
+```
+
+再进入下一步。
+
+### 4.2 前台启动 Agent
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-FosterAgent.ps1
 ```
+
+先观察 Host / Emulator 是否稳定在线。
 
 确认稳定后再安装登录自启：
 
@@ -177,6 +217,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-FosterAgentTask.ps
   -AgentDir C:\FosterAgent \
   -RunAsUser "MACHINE\foster"
 ```
+
+### 4.3 本地自行编译（仅开发/排障）
+
+如果确实需要在 Windows 本地重新编译：
+
+```powershell
+cd foster-platform
+cargo build --release -p foster-agent
+```
+
+然后把 `target\release\foster-agent.exe` 覆盖到 `C:\FosterAgent\`。生产宿主机日常部署不要求安装 Rust。
 
 ## 5. 验证 Host / Emulator 在线
 
