@@ -848,3 +848,78 @@ async fn insufficient_identity_does_not_reserve_platform_slot(
 
     Ok(())
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn uncertain_delivery_requires_recovery_instead_of_retry(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_fixture(&pool, "USER_FRIEND").await?;
+    let service = FosterDispatchService::new(pool.clone());
+    let (registry, mut receiver) = online_registry(fixture.host_id);
+
+    let uncertain = tokio::spawn(async move {
+        let outbound = receiver.recv().await.expect("foster command");
+        assert!(matches!(outbound.envelope.payload, ServerCommand::ExecuteFoster(_)));
+        drop(outbound.delivered);
+    });
+
+    let result = service.dispatch_job(fixture.job_id, &registry).await?;
+    uncertain.await?;
+    assert_eq!(result, DispatchFosterResult::RecoveryRequired);
+
+    let job: (String, Option<String>) = sqlx::query_as(
+        "SELECT status, error_code FROM foster_job WHERE id = ?",
+    )
+    .bind(fixture.job_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(job.0, "RECOVERY_REQUIRED");
+    assert_eq!(job.1.as_deref(), Some("AGENT_DELIVERY_UNCERTAIN"));
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn uncertain_platform_delivery_does_not_release_reserved_slot(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_fixture(&pool, "PLATFORM").await?;
+    let base = Utc.with_ymd_and_hms(2026, 9, 22, 12, 0, 0).unwrap();
+    let (_provider_id, cycle_id) =
+        seed_platform_resource(&pool, fixture.account_id, base, "uncertain-provider").await?;
+    let service = FosterDispatchService::new(pool.clone());
+    let (registry, mut receiver) = online_registry(fixture.host_id);
+
+    let uncertain = tokio::spawn(async move {
+        let outbound = receiver.recv().await.expect("foster command");
+        drop(outbound.delivered);
+    });
+    let result = service
+        .dispatch_job_at(fixture.job_id, &registry, base)
+        .await?;
+    uncertain.await?;
+
+    assert_eq!(result, DispatchFosterResult::RecoveryRequired);
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM foster_job WHERE id = ?",
+    )
+    .bind(fixture.job_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(status, "RECOVERY_REQUIRED");
+
+    let allocation_status: String = sqlx::query_scalar(
+        "SELECT status FROM foster_resource_allocation WHERE job_id = ?",
+    )
+    .bind(fixture.job_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(allocation_status, "RESERVED");
+    let slots: i32 = sqlx::query_scalar(
+        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
+    )
+    .bind(cycle_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(slots, 1);
+    Ok(())
+}
