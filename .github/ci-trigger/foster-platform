@@ -1,3 +1,3 @@
 phase=first-host-windows-release-gate
-head=a6175bf42373c3cdb367efce8903b097c6ca30ed
-reason=verify-linux-tests-and-windows-package
+head=0708ba80a82005ca25e3d94bb1f7aeafbfe734ca
+reason=verify-fixed-reusable-workflow
