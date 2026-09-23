@@ -1,0 +1,103 @@
+name: Build Foster Agent Windows Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_label:
+        description: Optional human-readable package label
+        required: false
+        default: manual
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: foster-platform
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: foster-platform
+
+      - name: Build foster-agent
+        run: cargo build --release -p foster-agent
+
+      - name: Package Windows Agent
+        shell: pwsh
+        env:
+          PACKAGE_LABEL: ${{ inputs.package_label }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $label = $env:PACKAGE_LABEL
+          if ([string]::IsNullOrWhiteSpace($label)) {
+            $label = "manual"
+          }
+          $label = ($label -replace '[^A-Za-z0-9._-]', '-').Trim('-')
+          if ([string]::IsNullOrWhiteSpace($label)) {
+            $label = "manual"
+          }
+
+          $packageName = "foster-agent-windows-$label"
+          $stagingRoot = Join-Path $PWD "dist"
+          $packageDir = Join-Path $stagingRoot $packageName
+
+          Remove-Item -Recurse -Force $stagingRoot -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
+
+          Copy-Item "target/release/foster-agent.exe" $packageDir
+          Copy-Item "deploy/windows/Start-FosterAgent.ps1" $packageDir
+          Copy-Item "deploy/windows/Install-FosterAgentTask.ps1" $packageDir
+          Copy-Item "deploy/windows/Test-FosterHost.ps1" $packageDir
+          Copy-Item "deploy/windows/agent.env.example" $packageDir
+
+          $exePath = Join-Path $packageDir "foster-agent.exe"
+          $exeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exePath).Hash.ToLowerInvariant()
+          "$exeHash  foster-agent.exe" |
+            Set-Content -LiteralPath (Join-Path $packageDir "foster-agent.exe.sha256") -Encoding ascii
+
+          $metadata = [ordered]@{
+            packageLabel = $label
+            repository = $env:GITHUB_REPOSITORY
+            gitSha = $env:GITHUB_SHA
+            workflowRunId = $env:GITHUB_RUN_ID
+            workflowRunNumber = $env:GITHUB_RUN_NUMBER
+            builtAtUtc = [DateTime]::UtcNow.ToString("o")
+            rustTarget = "x86_64-pc-windows-msvc"
+          }
+          $metadata |
+            ConvertTo-Json |
+            Set-Content -LiteralPath (Join-Path $packageDir "build-metadata.json") -Encoding utf8
+
+          $zipPath = Join-Path $stagingRoot "$packageName.zip"
+          Compress-Archive -Path (Join-Path $packageDir "*") -DestinationPath $zipPath -CompressionLevel Optimal
+
+          $zipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerInvariant()
+          "$zipHash  $packageName.zip" |
+            Set-Content -LiteralPath "$zipPath.sha256" -Encoding ascii
+
+          "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PACKAGE_ZIP=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PACKAGE_ZIP_SHA=$zipPath.sha256" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: |
+            ${{ env.PACKAGE_ZIP }}
+            ${{ env.PACKAGE_ZIP_SHA }}
+          if-no-files-found: error
+          retention-days: 30
