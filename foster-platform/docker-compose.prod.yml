@@ -1,0 +1,49 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: foster
+      MYSQL_USER: foster
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - foster-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://foster:${MYSQL_PASSWORD}@mysql:3306/foster
+      FOSTER_AGENT_TOKEN: ${FOSTER_AGENT_TOKEN}
+      FOSTER_ADMIN_TOKEN: ${FOSTER_ADMIN_TOKEN}
+      FOSTER_BIND_ADDR: 0.0.0.0:8080
+      FOSTER_SCHEDULER_INTERVAL_SECONDS: ${FOSTER_SCHEDULER_INTERVAL_SECONDS:-15}
+      FOSTER_RESOURCE_MIN_REMAINING_MINUTES: ${FOSTER_RESOURCE_MIN_REMAINING_MINUTES:-330}
+      FOSTER_RESOURCE_RETRY_SECONDS: ${FOSTER_RESOURCE_RETRY_SECONDS:-60}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "${FOSTER_HTTP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  foster-mysql-data:
