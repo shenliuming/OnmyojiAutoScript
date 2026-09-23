@@ -144,3 +144,95 @@ pub async fn list_hosts(pool: &MySqlPool) -> Result<Vec<HostAdminRow>, sqlx::Err
     .fetch_all(pool)
     .await
 }
+
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct EmulatorAdminRow {
+    pub id: i64,
+    pub host_id: i64,
+    pub emulator_code: String,
+    pub driver_type: String,
+    pub max_account_count: i32,
+    pub status: String,
+    pub adb_serial: Option<String>,
+    pub current_job_id: Option<String>,
+    pub last_heartbeat_at: Option<chrono::NaiveDateTime>,
+    pub bound_accounts: i64,
+}
+
+pub async fn list_host_emulators(
+    pool: &MySqlPool,
+    host_id: i64,
+) -> Result<Vec<EmulatorAdminRow>, sqlx::Error> {
+    sqlx::query_as::<_, EmulatorAdminRow>(
+        "SELECT
+            e.id,
+            e.host_id,
+            e.emulator_code,
+            e.driver_type,
+            e.max_account_count,
+            e.status,
+            e.adb_serial,
+            e.current_job_id,
+            e.last_heartbeat_at,
+            (
+                SELECT COUNT(*)
+                FROM emulator_account_binding b
+                WHERE b.emulator_id = e.id
+                  AND b.status IN ('PENDING', 'ACTIVE', 'MIGRATING')
+            ) AS bound_accounts
+         FROM emulator_instance e
+         WHERE e.host_id = ?
+         ORDER BY e.id ASC",
+    )
+    .bind(host_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_emulator(
+    pool: &MySqlPool,
+    emulator_id: i64,
+) -> Result<Option<EmulatorAdminRow>, sqlx::Error> {
+    sqlx::query_as::<_, EmulatorAdminRow>(
+        "SELECT
+            e.id,
+            e.host_id,
+            e.emulator_code,
+            e.driver_type,
+            e.max_account_count,
+            e.status,
+            e.adb_serial,
+            e.current_job_id,
+            e.last_heartbeat_at,
+            (
+                SELECT COUNT(*)
+                FROM emulator_account_binding b
+                WHERE b.emulator_id = e.id
+                  AND b.status IN ('PENDING', 'ACTIVE', 'MIGRATING')
+            ) AS bound_accounts
+         FROM emulator_instance e
+         WHERE e.id = ?",
+    )
+    .bind(emulator_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn update_emulator_capacity(
+    pool: &MySqlPool,
+    emulator_id: i64,
+    max_account_count: i32,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE emulator_instance
+         SET max_account_count = ?
+         WHERE id = ?",
+    )
+    .bind(max_account_count)
+    .bind(emulator_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() == 1)
+}
