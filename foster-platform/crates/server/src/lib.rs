@@ -4,6 +4,7 @@ pub mod config;
 pub mod control_plane;
 pub mod enrollment;
 pub mod foster_dispatch;
+pub mod host_admin;
 pub mod onboarding;
 pub mod public_portal;
 pub mod resource_admin;
