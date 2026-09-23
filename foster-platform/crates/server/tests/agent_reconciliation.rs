@@ -426,3 +426,45 @@ async fn verifying_account_is_not_failed_when_agent_work_is_already_done(
     assert_eq!(binding_status(&pool, fixture.binding_id).await?, "PENDING");
     Ok(())
 }
+
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn switching_job_without_agent_state_is_safely_redispatched(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "redispatch", "SWITCHING_ACCOUNT", 2).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let report = service.reconcile(fixture.host_id, &[]).await?;
+
+    assert_eq!(report.recovery_required, 0);
+    assert_eq!(report.redispatch_job_ids, vec![fixture.job_id]);
+    assert_eq!(
+        job_status(&pool, fixture.job_id).await?.0,
+        "SWITCHING_ACCOUNT"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn interrupted_switching_job_is_not_redispatched(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_job(&pool, "redispatch-interrupted", "SWITCHING_ACCOUNT", 3).await?;
+    let service = AgentReconciliationService::new(pool.clone());
+
+    let report = service
+        .reconcile(
+            fixture.host_id,
+            &[command_state(&fixture, AgentCommandStatus::Interrupted)],
+        )
+        .await?;
+
+    assert_eq!(report.recovery_required, 1);
+    assert!(report.redispatch_job_ids.is_empty());
+    assert_eq!(
+        job_status(&pool, fixture.job_id).await?.0,
+        "RECOVERY_REQUIRED"
+    );
+    Ok(())
+}
