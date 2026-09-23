@@ -82,3 +82,21 @@ pub async fn list_host_active_login_sessions(
     .fetch_all(pool)
     .await
 }
+
+
+pub async fn list_host_switching_foster_job_ids(
+    pool: &MySqlPool,
+    host_id: i64,
+) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT j.id
+         FROM foster_job j
+         JOIN emulator_instance e ON e.id = j.emulator_id
+         WHERE e.host_id = ?
+           AND j.status = 'SWITCHING_ACCOUNT'
+         ORDER BY j.started_at ASC, j.id ASC",
+    )
+    .bind(host_id)
+    .fetch_all(pool)
+    .await
+}
