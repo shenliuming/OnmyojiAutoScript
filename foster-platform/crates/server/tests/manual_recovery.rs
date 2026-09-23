@@ -449,3 +449,92 @@ async fn recovery_endpoints_require_admin_token_and_list_pending_jobs(
     assert_eq!(listed.status(), StatusCode::OK);
     Ok(())
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn operator_must_confirm_old_executor_stopped(pool: MySqlPool) -> anyhow::Result<()> {
+    let fixture = seed_recovery(&pool, true).await?;
+    let mut resolution = request(RecoveryAction::ConfirmNotExecuted, None);
+    resolution.confirmed_stopped = false;
+
+    assert!(matches!(
+        RecoveryService::new(pool.clone())
+            .resolve(fixture.job_id, resolution, at())
+            .await,
+        Err(RecoveryError::MustConfirmStopped)
+    ));
+
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM foster_resource_allocation WHERE id = ?",
+    )
+    .bind(fixture.allocation_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(status, "RESERVED");
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn expired_platform_reservation_is_not_released_twice_during_manual_retry(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_recovery(&pool, true).await?;
+    let later = at() + chrono::Duration::hours(9);
+    let reap = foster_server::resource_pool::ResourcePoolService::new(pool.clone())
+        .reap(later)
+        .await?;
+    assert_eq!(reap.expired_allocations, 1);
+
+    let result = RecoveryService::new(pool.clone())
+        .resolve(
+            fixture.job_id,
+            request(RecoveryAction::ConfirmNotExecuted, None),
+            later,
+        )
+        .await?;
+
+    assert_eq!(result.status, "RETRY");
+    assert_eq!(result.allocation_status.as_deref(), Some("EXPIRED"));
+
+    let occupied: i32 = sqlx::query_scalar(
+        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
+    )
+    .bind(fixture.cycle_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(occupied, 0);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn concurrent_operator_resolutions_only_apply_once(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let fixture = seed_recovery(&pool, true).await?;
+    let first = RecoveryService::new(pool.clone());
+    let second = RecoveryService::new(pool.clone());
+    let resolution = request(RecoveryAction::ConfirmNotExecuted, None);
+
+    let (left, right) = tokio::join!(
+        first.resolve(fixture.job_id, resolution.clone(), at()),
+        second.resolve(fixture.job_id, resolution, at()),
+    );
+
+    assert_eq!([left.is_ok(), right.is_ok()].iter().filter(|value| **value).count(), 1);
+
+    let occupied: i32 = sqlx::query_scalar(
+        "SELECT occupied_slots FROM foster_resource_cycle WHERE id = ?",
+    )
+    .bind(fixture.cycle_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(occupied, 0);
+
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM foster_recovery_audit WHERE job_id = ?",
+    )
+    .bind(fixture.job_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(audit_count, 1);
+    Ok(())
+}
