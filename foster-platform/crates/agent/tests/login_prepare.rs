@@ -245,6 +245,7 @@ fn command() -> StartLoginCommand {
 #[tokio::test]
 async fn prepare_orders_lease_to_screenshot_and_returns_qr() {
     let runner = FakeRunner::with_outputs(vec![
+        ok("connected to 127.0.0.1:16384\n"), // adb connect
         ok("device\n"),           // wait adb online
         packages(&[NORMAL]),      // instance 0: ordinary package present
         ok("Success\n"),          // uninstall on instance 0
@@ -266,6 +267,7 @@ async fn prepare_orders_lease_to_screenshot_and_returns_qr() {
     let prepared = executor.prepare(&command()).await.unwrap();
 
     let expected_calls = vec![
+        format!("adb connect {SERIAL}"),
         format!("adb -s {SERIAL} get-state"),
         format!("adb -s {SERIAL} shell pm list packages"),
         format!("adb -s {SERIAL} shell pm uninstall {NORMAL}"),
@@ -300,6 +302,7 @@ async fn prepare_orders_lease_to_screenshot_and_returns_qr() {
 #[tokio::test]
 async fn failed_market_install_stops_before_launch() {
     let runner = FakeRunner::with_outputs(vec![
+        ok("connected to 127.0.0.1:16384\n"), // adb connect
         ok("device\n"),
         packages(&[]), // instance 0 clean
         packages(&[]), // instance 1 clean
@@ -325,6 +328,7 @@ async fn failed_market_install_stops_before_launch() {
 #[tokio::test]
 async fn wrong_installed_package_stops_before_launch() {
     let runner = FakeRunner::with_outputs(vec![
+        ok("connected to 127.0.0.1:16384\n"), // adb connect
         ok("device\n"),
         packages(&[]),               // instance 0 clean
         packages(&[]),               // instance 1 clean

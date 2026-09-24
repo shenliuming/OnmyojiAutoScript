@@ -1,21 +1,28 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use foster_agent::emulator::{
     CommandOutput, CommandRunner, EmulatorDriver, EmulatorDriverError, GenericAdbEmulatorDriver,
+    wait_adb_online,
 };
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Default)]
 struct FakeRunner {
     outputs: Arc<Mutex<VecDeque<CommandOutput>>>,
+    calls: Arc<Mutex<Vec<String>>>,
 }
 
 impl FakeRunner {
     fn with_outputs(outputs: Vec<CommandOutput>) -> Self {
         Self {
             outputs: Arc::new(Mutex::new(outputs.into())),
+            calls: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    async fn calls(&self) -> Vec<String> {
+        self.calls.lock().await.clone()
     }
 }
 
@@ -23,9 +30,13 @@ impl FakeRunner {
 impl CommandRunner for FakeRunner {
     async fn run(
         &self,
-        _program: &str,
-        _args: &[String],
+        program: &str,
+        args: &[String],
     ) -> Result<CommandOutput, EmulatorDriverError> {
+        self.calls
+            .lock()
+            .await
+            .push(format!("{program} {}", args.join(" ")));
         self.outputs
             .lock()
             .await
@@ -155,6 +166,72 @@ async fn adb_state_controls_emulator_health() -> anyhow::Result<()> {
 
     assert_eq!(driver.status("emu-01").await?, EmulatorStatus::Idle);
     assert_eq!(driver.status("emu-01").await?, EmulatorStatus::Offline);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_recovers_network_serial_after_adb_connect() -> anyhow::Result<()> {
+    use foster_domain::EmulatorStatus;
+
+    let runner = FakeRunner::with_outputs(vec![
+        CommandOutput {
+            success: false,
+            stdout: Vec::new(),
+            stderr: b"error: device '(null)' not found".to_vec(),
+        },
+        CommandOutput {
+            success: true,
+            stdout: b"connected to 127.0.0.1:16384\n".to_vec(),
+            stderr: Vec::new(),
+        },
+        CommandOutput {
+            success: true,
+            stdout: b"device\n".to_vec(),
+            stderr: Vec::new(),
+        },
+    ]);
+    let driver = GenericAdbEmulatorDriver::from_json_with_runner(
+        config_json(),
+        "adb".into(),
+        runner.clone(),
+    )?;
+
+    assert_eq!(driver.status("emu-01").await?, EmulatorStatus::Idle);
+
+    let calls = runner.calls().await;
+    assert_eq!(calls[0], "adb -s 127.0.0.1:16384 get-state");
+    assert_eq!(calls[1], "adb connect 127.0.0.1:16384");
+    assert_eq!(calls[2], "adb -s 127.0.0.1:16384 get-state");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn wait_adb_online_connects_network_serial_before_polling() -> anyhow::Result<()> {
+    let runner = FakeRunner::with_outputs(vec![
+        CommandOutput {
+            success: false,
+            stdout: Vec::new(),
+            stderr: b"error: device '(null)' not found".to_vec(),
+        },
+        CommandOutput {
+            success: true,
+            stdout: b"connected to 127.0.0.1:16384\n".to_vec(),
+            stderr: Vec::new(),
+        },
+        CommandOutput {
+            success: true,
+            stdout: b"device\n".to_vec(),
+            stderr: Vec::new(),
+        },
+    ]);
+
+    wait_adb_online(&runner, "adb", "127.0.0.1:16384", Duration::from_secs(2)).await?;
+
+    let calls = runner.calls().await;
+    assert_eq!(calls[0], "adb connect 127.0.0.1:16384");
+    assert_eq!(calls[1], "adb -s 127.0.0.1:16384 get-state");
 
     Ok(())
 }

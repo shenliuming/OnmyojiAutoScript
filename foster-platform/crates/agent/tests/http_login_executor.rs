@@ -69,6 +69,11 @@ async fn prepare_returns_png_data_url() -> anyhow::Result<()> {
     let runner = FakeRunner::with_outputs(vec![
         CommandOutput {
             success: true,
+            stdout: b"connected to 127.0.0.1:16384\n".to_vec(),
+            stderr: Vec::new(),
+        },
+        CommandOutput {
+            success: true,
             stdout: b"device
 "
             .to_vec(),

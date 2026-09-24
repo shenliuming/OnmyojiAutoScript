@@ -454,6 +454,7 @@ mod tests {
             ready_instance(1, 16416),
         ]));
         let runner = FakeRunner::with_outputs(vec![
+            ok("connected to 127.0.0.1:16384\n"), // adb connect
             ok("device\n"),                          // wait adb online
             packages(&[NORMAL]),                     // instance 0 packages
             ok("Success\n"),                         // uninstall instance 0
@@ -484,6 +485,7 @@ mod tests {
         assert_eq!(
             runner.calls(),
             vec![
+                format!("adb connect {SERIAL}"),
                 format!("adb -s {SERIAL} get-state"),
                 format!("adb -s {SERIAL} shell pm list packages"),
                 format!("adb -s {SERIAL} shell pm uninstall {NORMAL}"),
@@ -514,6 +516,7 @@ mod tests {
             ready_instance(1, 16416),
         ]));
         let runner = FakeRunner::with_outputs(vec![
+            ok("connected to 127.0.0.1:16384\n"), // adb connect
             ok("device\n"),
             packages(&[]),   // instance 0 clean
             packages(&[]),   // instance 1 clean
@@ -528,13 +531,14 @@ mod tests {
             .unwrap();
 
         assert!(market.calls().is_empty());
-        assert_eq!(runner.calls().len(), 5);
+        assert_eq!(runner.calls().len(), 6);
     }
 
     #[tokio::test]
     async fn fails_when_ordinary_package_cannot_be_removed() {
         let controller = Arc::new(FakeController::new(vec![ready_instance(0, 16384)]));
         let runner = FakeRunner::with_outputs(vec![
+            ok("connected to 127.0.0.1:16384\n"), // adb connect
             ok("device\n"),
             packages(&[NORMAL]),
             failed(), // uninstall fails
@@ -556,6 +560,7 @@ mod tests {
     async fn fails_when_ordinary_package_survives_uninstall() {
         let controller = Arc::new(FakeController::new(vec![ready_instance(0, 16384)]));
         let runner = FakeRunner::with_outputs(vec![
+            ok("connected to 127.0.0.1:16384\n"), // adb connect
             ok("device\n"),
             packages(&[NORMAL]),
             ok("Success\n"),
@@ -577,6 +582,7 @@ mod tests {
     async fn fails_when_market_installs_the_wrong_package() {
         let controller = Arc::new(FakeController::new(vec![ready_instance(0, 16384)]));
         let runner = FakeRunner::with_outputs(vec![
+            ok("connected to 127.0.0.1:16384\n"), // adb connect
             ok("device\n"),
             packages(&[]),                    // instance clean
             packages(&[]),                    // decide: no full-channel yet
@@ -602,6 +608,7 @@ mod tests {
     async fn fails_when_market_has_no_full_channel_option() {
         let controller = Arc::new(FakeController::new(vec![ready_instance(0, 16384)]));
         let runner = FakeRunner::with_outputs(vec![
+            ok("connected to 127.0.0.1:16384\n"), // adb connect
             ok("device\n"),
             packages(&[]), // clean
             packages(&[]), // decide: nothing installed
@@ -626,6 +633,7 @@ mod tests {
     async fn launches_stopped_instance_before_preparing() {
         let controller = Arc::new(FakeController::new(vec![stopped_instance(2, 16384)]));
         let runner = FakeRunner::with_outputs(vec![
+            ok("connected to 127.0.0.1:16384\n"), // adb connect
             ok("device\n"),
             packages(&[]),     // clean
             packages(&[FULL]), // decide: already installed

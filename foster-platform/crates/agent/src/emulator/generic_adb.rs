@@ -227,23 +227,13 @@ where
     }
 
     async fn wait_for_adb(&self, serial: &str) -> Result<(), EmulatorDriverError> {
-        for _ in 0..20 {
-            let args = vec![
-                "-s".to_string(),
-                serial.to_string(),
-                "get-state".to_string(),
-            ];
-            let output = self.runner.run(&self.adb_program, &args).await?;
-            if output.success && String::from_utf8_lossy(&output.stdout).trim() == "device" {
-                return Ok(());
-            }
-
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
-
-        Err(EmulatorDriverError::Message(format!(
-            "adb device {serial} did not become ready"
-        )))
+        wait_adb_online(
+            &self.runner,
+            &self.adb_program,
+            serial,
+            Duration::from_secs(10),
+        )
+        .await
     }
 }
 
@@ -306,16 +296,34 @@ where
 
     async fn status(&self, instance_id: &str) -> Result<EmulatorStatus, EmulatorDriverError> {
         let config = self.instance_config(instance_id)?;
-        let args = vec!["-s".to_string(), config.adb_serial, "get-state".to_string()];
+        let args = vec![
+            "-s".to_string(),
+            config.adb_serial.clone(),
+            "get-state".to_string(),
+        ];
 
-        match self.runner.run(&self.adb_program, &args).await {
+        let first = self.runner.run(&self.adb_program, &args).await;
+        let output = match &first {
+            Ok(output)
+                if output.success && String::from_utf8_lossy(&output.stdout).trim() == "device" =>
+            {
+                return Ok(EmulatorStatus::Idle);
+            }
+            _ => {
+                // Network serials may simply be disconnected; try once more
+                // after an idempotent `adb connect`.
+                ensure_adb_connected(&self.runner, &self.adb_program, &config.adb_serial).await;
+                self.runner.run(&self.adb_program, &args).await
+            }
+        };
+
+        match output {
             Ok(output)
                 if output.success && String::from_utf8_lossy(&output.stdout).trim() == "device" =>
             {
                 Ok(EmulatorStatus::Idle)
             }
-            Ok(_) => Ok(EmulatorStatus::Offline),
-            Err(_) => Ok(EmulatorStatus::Offline),
+            _ => Ok(EmulatorStatus::Offline),
         }
     }
 
@@ -388,6 +396,13 @@ pub async fn uninstall_package<R: CommandRunner>(
     Ok(())
 }
 
+/// Network ADB serials (e.g. MuMu's 127.0.0.1:16384) must be connected before
+/// `get-state`/`shell` answer. `connect` is idempotent and safe to repeat.
+pub async fn ensure_adb_connected<R: CommandRunner>(runner: &R, adb_program: &str, serial: &str) {
+    let args = vec!["connect".to_string(), serial.to_string()];
+    let _ = runner.run(adb_program, &args).await;
+}
+
 pub async fn wait_adb_online<R: CommandRunner>(
     runner: &R,
     adb_program: &str,
@@ -395,7 +410,12 @@ pub async fn wait_adb_online<R: CommandRunner>(
     timeout: Duration,
 ) -> Result<(), EmulatorDriverError> {
     let deadline = tokio::time::Instant::now() + timeout;
+    let mut next_connect = tokio::time::Instant::now();
     loop {
+        if tokio::time::Instant::now() >= next_connect {
+            ensure_adb_connected(runner, adb_program, serial).await;
+            next_connect = tokio::time::Instant::now() + Duration::from_secs(5);
+        }
         let args = vec![
             "-s".to_string(),
             serial.to_string(),
