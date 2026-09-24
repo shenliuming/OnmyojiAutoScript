@@ -149,6 +149,29 @@ where
             .ok_or_else(|| EmulatorDriverError::UnknownInstance(emulator_code.to_string()))
     }
 
+    /// Launch a package on an explicit ADB serial. Callers must validate the
+    /// package before launching; the generic config package is not consulted.
+    pub async fn launch_package_for_serial(
+        &self,
+        serial: &str,
+        package: &str,
+    ) -> Result<(), EmulatorDriverError> {
+        launch_package(&self.runner, &self.adb_program, serial, package).await
+    }
+
+    pub async fn wait_package_running_for_serial(
+        &self,
+        serial: &str,
+        package: &str,
+        timeout: Duration,
+    ) -> Result<(), EmulatorDriverError> {
+        wait_package_running(&self.runner, &self.adb_program, serial, package, timeout).await
+    }
+
+    pub async fn screenshot_for_serial(&self, serial: &str) -> Result<Vec<u8>, EmulatorDriverError> {
+        capture_screenshot(&self.runner, &self.adb_program, serial).await
+    }
+
     pub async fn prepare_login_screen(
         &self,
         emulator_code: &str,
@@ -316,6 +339,149 @@ where
 
         Ok(output.stdout)
     }
+}
+
+fn adb_shell_args(serial: &str, shell_args: &[&str]) -> Vec<String> {
+    let mut args = vec!["-s".to_string(), serial.to_string(), "shell".to_string()];
+    args.extend(shell_args.iter().map(|arg| arg.to_string()));
+    args
+}
+
+/// List installed packages. Never filters by prefix: `pm list packages <filter>`
+/// matches substrings, so a `com.netease.onmyoji` filter would also report the
+/// full-channel package.
+pub async fn query_installed_packages<R: CommandRunner>(
+    runner: &R,
+    adb_program: &str,
+    serial: &str,
+) -> Result<Vec<String>, EmulatorDriverError> {
+    let args = adb_shell_args(serial, &["pm", "list", "packages"]);
+    let output = runner.run(adb_program, &args).await?;
+    if !output.success {
+        return Err(EmulatorDriverError::Message(format!(
+            "adb package listing failed for {serial}"
+        )));
+    }
+    Ok(parse_package_listing(&output.stdout))
+}
+
+pub fn parse_package_listing(stdout: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("package:").map(ToString::to_string))
+        .collect()
+}
+
+pub async fn uninstall_package<R: CommandRunner>(
+    runner: &R,
+    adb_program: &str,
+    serial: &str,
+    package: &str,
+) -> Result<(), EmulatorDriverError> {
+    let args = adb_shell_args(serial, &["pm", "uninstall", package]);
+    let output = runner.run(adb_program, &args).await?;
+    if !output.success {
+        return Err(EmulatorDriverError::Message(format!(
+            "adb uninstall failed for {package} on {serial}"
+        )));
+    }
+    Ok(())
+}
+
+pub async fn wait_adb_online<R: CommandRunner>(
+    runner: &R,
+    adb_program: &str,
+    serial: &str,
+    timeout: Duration,
+) -> Result<(), EmulatorDriverError> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let args = vec![
+            "-s".to_string(),
+            serial.to_string(),
+            "get-state".to_string(),
+        ];
+        if let Ok(output) = runner.run(adb_program, &args).await
+            && output.success
+            && String::from_utf8_lossy(&output.stdout).trim() == "device"
+        {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(EmulatorDriverError::Message(format!(
+                "adb device {serial} did not become ready"
+            )));
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+pub async fn launch_package<R: CommandRunner>(
+    runner: &R,
+    adb_program: &str,
+    serial: &str,
+    package: &str,
+) -> Result<(), EmulatorDriverError> {
+    let args = vec![
+        "-s".to_string(),
+        serial.to_string(),
+        "shell".to_string(),
+        "monkey".to_string(),
+        "-p".to_string(),
+        package.to_string(),
+        "-c".to_string(),
+        "android.intent.category.LAUNCHER".to_string(),
+        "1".to_string(),
+    ];
+    let output = runner.run(adb_program, &args).await?;
+    if !output.success {
+        return Err(command_failure("launch game", adb_program, &output.stderr));
+    }
+    Ok(())
+}
+
+pub async fn wait_package_running<R: CommandRunner>(
+    runner: &R,
+    adb_program: &str,
+    serial: &str,
+    package: &str,
+    timeout: Duration,
+) -> Result<(), EmulatorDriverError> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let args = adb_shell_args(serial, &["pidof", package]);
+        if let Ok(output) = runner.run(adb_program, &args).await
+            && output.success
+            && !String::from_utf8_lossy(&output.stdout).trim().is_empty()
+        {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(EmulatorDriverError::Message(format!(
+                "package {package} did not start on {serial}"
+            )));
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+pub async fn capture_screenshot<R: CommandRunner>(
+    runner: &R,
+    adb_program: &str,
+    serial: &str,
+) -> Result<Vec<u8>, EmulatorDriverError> {
+    let args = vec![
+        "-s".to_string(),
+        serial.to_string(),
+        "exec-out".to_string(),
+        "screencap".to_string(),
+        "-p".to_string(),
+    ];
+    let output = runner.run(adb_program, &args).await?;
+    if !output.success || output.stdout.is_empty() {
+        return Err(command_failure("adb screenshot", adb_program, &output.stderr));
+    }
+    Ok(output.stdout)
 }
 
 fn command_failure(operation: &str, program: &str, stderr: &[u8]) -> EmulatorDriverError {

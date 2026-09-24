@@ -24,6 +24,10 @@ pub struct MumuConfig {
     pub resolution_width: u32,
     pub resolution_height: u32,
     pub command_timeout: Duration,
+    pub market_timeout: Duration,
+    pub market_poll_interval: Duration,
+    pub launch_wait_timeout: Duration,
+    pub launch_settle_delay: Duration,
 }
 
 impl Default for MumuConfig {
@@ -37,6 +41,10 @@ impl Default for MumuConfig {
             resolution_width: 1280,
             resolution_height: 720,
             command_timeout: Duration::from_secs(30),
+            market_timeout: Duration::from_secs(600),
+            market_poll_interval: Duration::from_secs(2),
+            launch_wait_timeout: Duration::from_secs(120),
+            launch_settle_delay: Duration::from_secs(5),
         }
     }
 }
@@ -92,12 +100,28 @@ impl MumuConfig {
             "FOSTER_RESOLUTION_HEIGHT",
             config.resolution_height,
         )?;
-        let seconds = positive_u64(
-            &mut get,
-            "FOSTER_MUMU_COMMAND_TIMEOUT_SECONDS",
-            config.command_timeout.as_secs(),
-        )?;
-        config.command_timeout = Duration::from_secs(seconds);
+        for (name, target) in [
+            (
+                "FOSTER_MUMU_COMMAND_TIMEOUT_SECONDS",
+                &mut config.command_timeout,
+            ),
+            ("FOSTER_MUMU_MARKET_TIMEOUT_SECONDS", &mut config.market_timeout),
+            (
+                "FOSTER_MUMU_MARKET_POLL_SECONDS",
+                &mut config.market_poll_interval,
+            ),
+            (
+                "FOSTER_MUMU_LAUNCH_WAIT_SECONDS",
+                &mut config.launch_wait_timeout,
+            ),
+            (
+                "FOSTER_MUMU_LAUNCH_SETTLE_SECONDS",
+                &mut config.launch_settle_delay,
+            ),
+        ] {
+            let seconds = positive_u64(&mut get, name, target.as_secs())?;
+            *target = Duration::from_secs(seconds);
+        }
         Ok(config)
     }
 }
@@ -235,6 +259,81 @@ impl MumuCli {
     pub async fn info_all(&self) -> Result<Vec<MumuInstanceInfo>, MumuError> {
         let output = self.run(&["info", "--vmindex", "all"]).await?;
         parse_info_all(&output.stdout)
+    }
+
+    pub async fn launch_instance(&self, index: u32) -> Result<(), MumuError> {
+        self.run_owned(launch_args(index)).await?;
+        Ok(())
+    }
+
+    pub async fn apply_resolution(&self, index: u32) -> Result<(), MumuError> {
+        let args = resolution_args(
+            index,
+            self.config.resolution_width,
+            self.config.resolution_height,
+        );
+        self.run_owned(args).await?;
+        Ok(())
+    }
+
+    async fn run_owned(&self, args: Vec<String>) -> Result<CommandOutput, MumuError> {
+        let borrowed = args.iter().map(String::as_str).collect::<Vec<_>>();
+        self.run(&borrowed).await
+    }
+}
+
+pub fn launch_args(index: u32) -> Vec<String> {
+    vec![
+        "control".into(),
+        "--vmindex".into(),
+        index.to_string(),
+        "launch".into(),
+    ]
+}
+
+pub fn resolution_args(index: u32, width: u32, height: u32) -> Vec<String> {
+    vec![
+        "setting".into(),
+        "--vmindex".into(),
+        index.to_string(),
+        "--key".into(),
+        "resolution_width.custom".into(),
+        "--value".into(),
+        width.to_string(),
+        "--key".into(),
+        "resolution_height.custom".into(),
+        "--value".into(),
+        height.to_string(),
+    ]
+}
+
+#[async_trait::async_trait]
+impl super::MumuController for MumuCli {
+    async fn info_all(&self) -> Result<Vec<MumuInstanceInfo>, MumuError> {
+        MumuCli::info_all(self).await
+    }
+
+    async fn launch_instance(&self, index: u32) -> Result<(), MumuError> {
+        MumuCli::launch_instance(self, index).await
+    }
+
+    async fn apply_resolution(&self, index: u32) -> Result<(), MumuError> {
+        MumuCli::apply_resolution(self, index).await
+    }
+}
+
+#[async_trait::async_trait]
+impl super::MumuController for std::sync::Arc<MumuCli> {
+    async fn info_all(&self) -> Result<Vec<MumuInstanceInfo>, MumuError> {
+        (**self).info_all().await
+    }
+
+    async fn launch_instance(&self, index: u32) -> Result<(), MumuError> {
+        (**self).launch_instance(index).await
+    }
+
+    async fn apply_resolution(&self, index: u32) -> Result<(), MumuError> {
+        (**self).apply_resolution(index).await
     }
 }
 
@@ -454,6 +553,35 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, MumuError::Timeout));
         assert!(!error.to_string().contains("secret-value"));
+    }
+
+    #[test]
+    fn launch_and_resolution_args_match_mumu_cli_contract() {
+        assert_eq!(
+            launch_args(3),
+            vec![
+                "control".to_string(),
+                "--vmindex".to_string(),
+                "3".to_string(),
+                "launch".to_string(),
+            ]
+        );
+        assert_eq!(
+            resolution_args(1, 1280, 720),
+            vec![
+                "setting".to_string(),
+                "--vmindex".to_string(),
+                "1".to_string(),
+                "--key".to_string(),
+                "resolution_width.custom".to_string(),
+                "--value".to_string(),
+                "1280".to_string(),
+                "--key".to_string(),
+                "resolution_height.custom".to_string(),
+                "--value".to_string(),
+                "720".to_string(),
+            ]
+        );
     }
 
     #[test]
