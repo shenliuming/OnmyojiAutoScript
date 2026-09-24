@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use foster_agent::{
     command_journal::CommandJournal, config::AgentConfig, emulator::GenericAdbEmulatorDriver,
-    foster::HttpOasFosterExecutor, login::HttpOasLoginExecutor, runtime::AgentRuntime,
+    foster::HttpOasFosterExecutor, login::HttpOasLoginExecutor, mumu::MumuConfig,
+    runtime::AgentRuntime,
 };
 
 #[tokio::main]
@@ -20,6 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let journal_path = std::env::var("FOSTER_COMMAND_JOURNAL_PATH")
         .unwrap_or_else(|_| "command-journal.json".to_string());
     let command_journal = CommandJournal::open(&journal_path)?;
+    let _mumu_config = MumuConfig::from_env()?;
 
     let emulators_json = std::env::var("FOSTER_EMULATORS_JSON")?;
     let adb_program = std::env::var("FOSTER_ADB_PATH").unwrap_or_else(|_| "adb".to_string());
