@@ -7,13 +7,20 @@ use tokio::{process::Command, time::timeout};
 const DEFAULT_CLI_PATH: &str = r"C:\Program Files\Netease\MuMu\nx_main\mumu-cli.exe";
 const FULL_CHANNEL_PACKAGE: &str = "com.netease.onmyoji.wyzymnqsd_cps";
 
+/// MuMu settings. The launch package is intentionally inaccessible to callers.
+///
+/// ```compile_fail
+/// use foster_agent::mumu::MumuConfig;
+/// let mut config = MumuConfig::default();
+/// config.full_channel_package = "com.netease.onmyoji".to_string();
+/// ```
 #[derive(Debug, Clone)]
 pub struct MumuConfig {
     pub cli_path: PathBuf,
     pub app_market_package: String,
     pub app_market_activity: String,
     pub normal_package: String,
-    pub full_channel_package: String,
+    full_channel_package: String,
     pub resolution_width: u32,
     pub resolution_height: u32,
     pub command_timeout: Duration,
@@ -35,6 +42,22 @@ impl Default for MumuConfig {
 }
 
 impl MumuConfig {
+    pub fn full_channel_package(&self) -> &str {
+        &self.full_channel_package
+    }
+
+    pub fn try_with_full_channel_package(
+        mut self,
+        package: impl Into<String>,
+    ) -> Result<Self, MumuError> {
+        let package = package.into();
+        if package != FULL_CHANNEL_PACKAGE {
+            return Err(MumuError::InvalidConfig("FOSTER_FULL_CHANNEL_PACKAGE"));
+        }
+        self.full_channel_package = package;
+        Ok(self)
+    }
+
     pub fn from_env() -> Result<Self, MumuError> {
         Self::from_lookup(|name| std::env::var(name).ok())
     }
@@ -54,17 +77,13 @@ impl MumuConfig {
                 &mut config.app_market_activity,
             ),
             ("FOSTER_NORMAL_PACKAGE", &mut config.normal_package),
-            (
-                "FOSTER_FULL_CHANNEL_PACKAGE",
-                &mut config.full_channel_package,
-            ),
         ] {
             if let Some(value) = get(name) {
                 *target = nonempty(value, name)?;
             }
         }
-        if config.full_channel_package != FULL_CHANNEL_PACKAGE {
-            return Err(MumuError::InvalidConfig("FOSTER_FULL_CHANNEL_PACKAGE"));
+        if let Some(package) = get("FOSTER_FULL_CHANNEL_PACKAGE") {
+            config = config.try_with_full_channel_package(package)?;
         }
         config.resolution_width =
             positive_u32(&mut get, "FOSTER_RESOLUTION_WIDTH", config.resolution_width)?;
@@ -341,6 +360,23 @@ mod tests {
     }
 
     #[test]
+    fn direct_package_configuration_rejects_ordinary_package() {
+        let result =
+            MumuConfig::default().try_with_full_channel_package("com.netease.onmyoji".to_string());
+        assert!(matches!(
+            result,
+            Err(MumuError::InvalidConfig("FOSTER_FULL_CHANNEL_PACKAGE"))
+        ));
+        let approved = MumuConfig::default()
+            .try_with_full_channel_package("com.netease.onmyoji.wyzymnqsd_cps".to_string())
+            .unwrap();
+        assert_eq!(
+            approved.full_channel_package(),
+            "com.netease.onmyoji.wyzymnqsd_cps"
+        );
+    }
+
+    #[test]
     fn output_debug_redacts_command_streams() {
         let output = CommandOutput {
             stdout: b"secret-value".to_vec(),
@@ -437,7 +473,7 @@ mod tests {
         assert_eq!(config.app_market_activity, "com.mumu.store/.MainActivity");
         assert_eq!(config.normal_package, "com.netease.onmyoji");
         assert_eq!(
-            config.full_channel_package,
+            config.full_channel_package(),
             "com.netease.onmyoji.wyzymnqsd_cps"
         );
         assert!(
