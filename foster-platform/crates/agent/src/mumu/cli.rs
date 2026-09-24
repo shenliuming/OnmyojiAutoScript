@@ -5,6 +5,7 @@ use thiserror::Error;
 use tokio::{process::Command, time::timeout};
 
 const DEFAULT_CLI_PATH: &str = r"C:\Program Files\Netease\MuMu\nx_main\mumu-cli.exe";
+const FULL_CHANNEL_PACKAGE: &str = "com.netease.onmyoji.wyzymnqsd_cps";
 
 #[derive(Debug, Clone)]
 pub struct MumuConfig {
@@ -25,7 +26,7 @@ impl Default for MumuConfig {
             app_market_package: "com.mumu.store".into(),
             app_market_activity: "com.mumu.store/.MainActivity".into(),
             normal_package: "com.netease.onmyoji".into(),
-            full_channel_package: "com.netease.onmyoji.wyzymnqsd_cps".into(),
+            full_channel_package: FULL_CHANNEL_PACKAGE.into(),
             resolution_width: 1280,
             resolution_height: 720,
             command_timeout: Duration::from_secs(30),
@@ -61,6 +62,9 @@ impl MumuConfig {
             if let Some(value) = get(name) {
                 *target = nonempty(value, name)?;
             }
+        }
+        if config.full_channel_package != FULL_CHANNEL_PACKAGE {
+            return Err(MumuError::InvalidConfig("FOSTER_FULL_CHANNEL_PACKAGE"));
         }
         config.resolution_width =
             positive_u32(&mut get, "FOSTER_RESOLUTION_WIDTH", config.resolution_width)?;
@@ -218,7 +222,8 @@ impl MumuCli {
 pub fn parse_info_all(output: &[u8]) -> Result<Vec<MumuInstanceInfo>, MumuError> {
     let mut value: serde_json::Value =
         serde_json::from_slice(output).map_err(|_| MumuError::InvalidJson)?;
-    if let Some(code) = value.get("errcode").and_then(|value| value.as_i64()) {
+    if let Some(code) = value.get("errcode") {
+        let code = code.as_i64().ok_or(MumuError::InvalidOutput)?;
         if code != 0 {
             return Err(MumuError::Protocol(code));
         }
@@ -228,10 +233,19 @@ pub fn parse_info_all(output: &[u8]) -> Result<Vec<MumuInstanceInfo>, MumuError>
     } else if let Some(players) = value.get_mut("players") {
         value = players.take();
     }
-    if value.is_object() && value.get("index").is_some() {
-        value = serde_json::Value::Array(vec![value]);
-    }
-    serde_json::from_value(value).map_err(|_| MumuError::InvalidOutput)
+    let items = match value {
+        serde_json::Value::Array(items) => items,
+        serde_json::Value::Object(map) if map.contains_key("index") => {
+            vec![serde_json::Value::Object(map)]
+        }
+        serde_json::Value::Object(map) => map.into_values().collect(),
+        _ => return Err(MumuError::InvalidOutput),
+    };
+    let mut instances: Vec<MumuInstanceInfo> =
+        serde_json::from_value(serde_json::Value::Array(items))
+            .map_err(|_| MumuError::InvalidOutput)?;
+    instances.sort_by_key(|instance| instance.index);
+    Ok(instances)
 }
 
 #[cfg(test)]
@@ -240,24 +254,45 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn parses_running_and_stopped_instances() {
-        let json = br#"[
-            {"index":"0","name":"MuMu 0","adb_host_ip":"127.0.0.1","adb_port":16384,
-             "is_android_started":true,"is_process_started":true,"player_state":"running"},
-            {"index":"2","name":"MuMu 2","is_android_started":false,"is_process_started":false}
-        ]"#;
-        let instances = parse_info_all(json).unwrap();
-        assert_eq!(instances.len(), 2);
+    fn parses_local_mumu_keyed_running_and_stopped_instances() {
+        // Redacted local `mumu-cli info --vmindex all` output: volatile IDs, handles,
+        // timestamps, and disk usage are replaced while preserving field types.
+        let json = r#"{
+            "0": {"adb_host_ip":"127.0.0.1","adb_port":16384,"android_version":"15.0",
+                  "created_timestamp":0,"disk_size_bytes":0,"error_code":0,"hyperv_enabled":true,
+                  "index":"0","info_source":"rpc","is_android_started":true,"is_main":false,
+                  "is_process_started":true,"launch_err_code":0,"launch_err_msg":"","launch_time":0,
+                  "main_wnd":"REDACTED","name":"MuMu安卓设备","pid":0,"player_state":"start_finished",
+                  "render_wnd":"REDACTED","vt_enabled":true},
+            "1": {"adb_host_ip":"127.0.0.1","adb_port":16416,"android_version":"15.0",
+                  "created_timestamp":0,"disk_size_bytes":0,"error_code":0,"hyperv_enabled":true,
+                  "index":"1","info_source":"rpc","is_android_started":true,"is_main":false,
+                  "is_process_started":true,"name":"MuMu安卓设备-1","pid":0,
+                  "player_state":"start_finished","render_wnd":"REDACTED","vt_enabled":true},
+            "2": {"android_version":"15.0","created_timestamp":0,"disk_size_bytes":0,
+                  "index":"2","info_source":"rpc","is_android_started":false,"is_main":false,
+                  "is_process_started":false,"name":"MuMu安卓设备-2"},
+            "3": {"android_version":"15.0","created_timestamp":0,"disk_size_bytes":0,
+                  "index":"3","is_android_started":false,"is_main":false,
+                  "is_process_started":false,"name":"MuMu安卓设备-3"}
+        }"#;
+        let instances = parse_info_all(json.as_bytes()).unwrap();
+        assert_eq!(instances.len(), 4);
         assert_eq!(instances[0].index, 0);
         assert_eq!(instances[0].adb_host_ip.as_deref(), Some("127.0.0.1"));
         assert_eq!(instances[0].adb_port, Some(16384));
         assert!(instances[0].is_android_started);
         assert!(instances[0].is_process_started);
-        assert_eq!(instances[0].player_state.as_deref(), Some("running"));
-        assert_eq!(instances[1].index, 2);
-        assert_eq!(instances[1].name, "MuMu 2");
-        assert_eq!(instances[1].adb_host_ip, None);
-        assert_eq!(instances[1].adb_port, None);
+        assert_eq!(instances[0].player_state.as_deref(), Some("start_finished"));
+        assert_eq!(instances[1].index, 1);
+        assert_eq!(instances[1].adb_port, Some(16416));
+        assert_eq!(instances[2].index, 2);
+        assert_eq!(instances[2].name, "MuMu安卓设备-2");
+        assert_eq!(instances[2].adb_host_ip, None);
+        assert_eq!(instances[2].adb_port, None);
+        assert!(!instances[2].is_android_started);
+        assert_eq!(instances[3].index, 3);
+        assert_eq!(instances[3].player_state, None);
     }
 
     #[test]
@@ -272,13 +307,37 @@ mod tests {
     }
 
     #[test]
-    fn parses_wrapped_instances_and_rejects_protocol_errors() {
-        let json = br#"{"errcode":0,"data":[{"index":1,"name":"MuMu 1","is_android_started":false,"is_process_started":true}]}"#;
-        assert_eq!(parse_info_all(json).unwrap()[0].index, 1);
+    fn rejects_protocol_errors() {
         assert_eq!(
             parse_info_all(br#"{"errcode":9,"errmsg":"secret-value"}"#),
             Err(MumuError::Protocol(9))
         );
+    }
+
+    #[test]
+    fn rejects_invalid_errcode_types_even_with_valid_instance_data() {
+        for code in ["\"0\"", "null", "false", "0.0"] {
+            let json = format!(
+                "{{\"errcode\":{code},\"data\":[{{\"index\":\"0\",\"name\":\"MuMu\",\"is_android_started\":true,\"is_process_started\":true}}]}}"
+            );
+            assert_eq!(
+                parse_info_all(json.as_bytes()),
+                Err(MumuError::InvalidOutput)
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_any_package_override_other_than_approved_full_channel() {
+        for package in ["com.netease.onmyoji", "com.example.other"] {
+            let result = MumuConfig::from_lookup(|name| {
+                (name == "FOSTER_FULL_CHANNEL_PACKAGE").then(|| package.into())
+            });
+            assert!(matches!(
+                result,
+                Err(MumuError::InvalidConfig("FOSTER_FULL_CHANNEL_PACKAGE"))
+            ));
+        }
     }
 
     #[test]
