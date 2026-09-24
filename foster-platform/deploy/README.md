@@ -152,6 +152,7 @@ Copy-Item .\agent.env.example .\agent.env
 - `FOSTER_AGENT_TOKEN`，必须和 Server 一致
 - `FOSTER_HOST_ID`，填写上一步返回的 Host id
 - `FOSTER_ADB_PATH`
+- `FOSTER_MUMU_CLI_PATH`
 - `FOSTER_EMULATORS_JSON`
 
 示例：
@@ -163,7 +164,8 @@ FOSTER_AGENT_ID=host-01-agent
 FOSTER_HOST_ID=1
 FOSTER_OAS_BASE_URL=http://127.0.0.1:22270
 FOSTER_ADB_PATH=C:\\Android\\platform-tools\\adb.exe
-FOSTER_EMULATORS_JSON=[{"emulatorCode":"emu-01","adbSerial":"127.0.0.1:16384","oasConfigName":"oas-emu-01","packageName":"com.netease.onmyoji","startProgram":null,"startArgs":[],"stopProgram":null,"stopArgs":[],"loginPrepareProgram":null,"loginPrepareArgs":[],"loginPrepareDelayMs":3000}]
+FOSTER_MUMU_CLI_PATH=C:\\Program Files\\Netease\\MuMu\\nx_main\\mumu-cli.exe
+FOSTER_EMULATORS_JSON=[{"emulatorCode":"emu-01","adbSerial":"127.0.0.1:16384","oasConfigName":"oas-emu-01","packageName":null,"startProgram":null,"startArgs":[],"stopProgram":null,"stopArgs":[],"loginPrepareProgram":null,"loginPrepareArgs":[],"loginPrepareDelayMs":0}]
 ```
 
 ### 4.1 先跑宿主机 Smoke
@@ -182,7 +184,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-FosterHost.ps1
 - `FOSTER_EMULATORS_JSON`；
 - ADB executable；
 - 每个配置模拟器的 `adb -s <serial> get-state`；
-- `emulatorCode / adbSerial / oasConfigName` 是否齐全。
+- `emulatorCode / adbSerial / oasConfigName` 是否齐全；
+- MuMu CLI（`mumu-cli info` 只读探测）。
 
 只有看到：
 
@@ -191,6 +194,14 @@ Foster host preflight passed.
 ```
 
 再进入下一步。
+
+针对 MuMu 全渠道登录，再跑一次专用只读预检（可传未填的 `agent.env`，缺失项会给出默认值）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Test-MumuFullChannel.ps1 -EnvFile .\agent.env
+```
+
+它会报告 MuMu 实例列表（索引、启动状态、ADB endpoint）、每个已启动实例的普通包/全渠道包装态、ADB 与 OAS 可达性。全程只读，不卸载、不安装、不启动任何东西。
 
 ### 4.2 前台启动 Agent
 
@@ -406,3 +417,52 @@ curl -X POST http://SERVER:8080/admin/recovery-jobs/JOB_ID/resolve \
 此操作会在事务中释放仍处于 RESERVED 的资源名额、增加任务 `retry_count`，并在 5 分钟后重新排队。旧 attempt 的迟到事件不会更新新 attempt。所有人工操作写入 `foster_recovery_audit`；重复操作或错误 attempt 会返回冲突。
 
 **无法确认时，不要选择任何动作。** 保留 `RECOVERY_REQUIRED` 和资源占坑，直到核实或资源卡自然到期。确认成功但资源卡已自然到期的历史异常，不应伪造新的剩余时长。
+
+
+## 11. MuMu 全渠道扫码登录
+
+登录准备由 Agent 自动编排，流程如下：
+
+1. `mumu-cli info --vmindex all` 查询所有 MuMu 实例；
+2. 自动挑选一个空闲实例（排除已占用、ADB 不在线、未启动完成的实例）并加实例锁；
+3. 对**所有**发现的实例卸载普通包 `com.netease.onmyoji`；
+4. 选中的实例设置分辨率 1280×720；
+5. 若实例未启动则通过 `mumu-cli control --vmindex N launch` 启动并等待 ADB 在线；
+6. 打开 MuMu 应用市场（`com.mumu.store/.MainActivity`）；
+7. 搜索《阴阳师》并选中“全渠道”版本，触发安装；
+8. 轮询包管理器，直到全渠道包 `com.netease.onmyoji.wyzymnqsd_cps` 安装完成；
+9. 通过 ADB 启动全渠道包（只允许启动这个包名）；
+10. `adb exec-out screencap -p` 截取扫码页，经现有 `QR_READY` 事件显示到登录 H5，用户扫码后由 OAS `/login/detect` 识别身份。
+
+### 11.1 破坏性操作警告
+
+登录准备开始时，Agent 会对**所有** MuMu 实例执行 `pm uninstall com.netease.onmyoji`。这会删除普通包在本地的全部数据（登录态、缓存）。全渠道包与普通包数据互不影响；已安装全渠道包的实例不受影响。
+
+### 11.2 硬失败规则
+
+以下情况登录准备直接失败，绝不会回退启动普通包：
+
+- 应用市场没有“全渠道”选项，或安装完成后包名不是 `com.netease.onmyoji.wyzymnqsd_cps`；
+- 普通包卸载失败或卸载后仍存在；
+- 应用市场 UI 选择器失效（找不到搜索框/游戏条目/安装按钮）或安装超时；
+- MuMu CLI 返回坏 JSON、非零退出码或超时。
+
+实例锁在登录会话结束、取消、失败或 Agent 重启时自动释放。
+
+### 11.3 相关配置
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `FOSTER_MUMU_CLI_PATH` | `C:\Program Files\Netease\MuMu\nx_main\mumu-cli.exe` | MuMu CLI 路径 |
+| `FOSTER_MUMU_APP_MARKET_PACKAGE` | `com.mumu.store` | 应用市场包名 |
+| `FOSTER_MUMU_APP_MARKET_ACTIVITY` | `com.mumu.store/.MainActivity` | 应用市场入口 |
+| `FOSTER_FULL_CHANNEL_PACKAGE` | `com.netease.onmyoji.wyzymnqsd_cps` | 全渠道包名（不可改为其他值） |
+| `FOSTER_NORMAL_PACKAGE` | `com.netease.onmyoji` | 普通包名 |
+| `FOSTER_RESOLUTION_WIDTH` / `FOSTER_RESOLUTION_HEIGHT` | `1280` / `720` | 分辨率 |
+| `FOSTER_MUMU_COMMAND_TIMEOUT_SECONDS` | `30` | MuMu CLI 命令超时 |
+| `FOSTER_MUMU_MARKET_TIMEOUT_SECONDS` | `600` | 应用市场安装总超时 |
+| `FOSTER_MUMU_MARKET_POLL_SECONDS` | `2` | 安装轮询间隔 |
+| `FOSTER_MUMU_LAUNCH_WAIT_SECONDS` | `120` | ADB 在线/游戏启动等待 |
+| `FOSTER_MUMU_LAUNCH_SETTLE_SECONDS` | `5` | 启动后到截图的稳定等待 |
+
+`FOSTER_EMULATORS_JSON` 中 `packageName` 必须保持 `null`：游戏启动包名由 Agent 在包名校验通过后自行决定，配置里的 `adbSerial` 需与 MuMu 实例上报的 endpoint 一致，`oasConfigName` 对应该实例的 OAS 配置名。

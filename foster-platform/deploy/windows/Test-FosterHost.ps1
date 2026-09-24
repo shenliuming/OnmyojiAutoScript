@@ -147,6 +147,8 @@ else {
         }
 
         try {
+            # Network serials need an explicit (idempotent) connect first.
+            & $adbPath connect $serial 2>&1 | Out-Null
             $state = (& $adbPath -s $serial get-state 2>&1 | Out-String).Trim()
             if ($LASTEXITCODE -eq 0 -and $state -eq "device") {
                 Add-Success "$code ADB online ($serial), OAS config=$oasConfig"
@@ -159,6 +161,29 @@ else {
             Add-Failure "$code ADB check failed ($serial): $($_.Exception.Message)"
         }
     }
+}
+
+$mumuCliPath = [Environment]::GetEnvironmentVariable("FOSTER_MUMU_CLI_PATH", "Process")
+if ([string]::IsNullOrWhiteSpace($mumuCliPath)) {
+    $mumuCliPath = "C:\Program Files\Netease\MuMu\nx_main\mumu-cli.exe"
+}
+if (Test-Path -LiteralPath $mumuCliPath) {
+    Add-Success "MuMu CLI found: $mumuCliPath"
+    try {
+        $null = (& $mumuCliPath info --vmindex all 2>&1 | Out-String)
+        if ($LASTEXITCODE -eq 0) {
+            Add-Success "MuMu CLI info responds"
+        }
+        else {
+            Add-Failure "MuMu CLI info failed with exit code $LASTEXITCODE"
+        }
+    }
+    catch {
+        Add-Failure "MuMu CLI info failed: $($_.Exception.Message)"
+    }
+}
+else {
+    Add-Failure "MuMu CLI not found: $mumuCliPath (set FOSTER_MUMU_CLI_PATH)"
 }
 
 if ($failures.Count -gt 0) {
