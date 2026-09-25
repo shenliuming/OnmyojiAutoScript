@@ -43,11 +43,11 @@
 - Produces `MumuCli::info_all() -> Result<Vec<MumuInstanceInfo>, MumuError>` and `MumuCli::run(args: &[&str]) -> Result<CommandOutput, MumuError>`.
 - `MumuInstanceInfo` contains `index`, `name`, `adb_host_ip`, `adb_port`, `is_android_started`, `is_process_started`, and `player_state`.
 
-- [ ] **Step 1: Write failing parser tests** for the observed `mumu-cli info --vmindex all` JSON, malformed JSON, non-zero exit, and timeout.
-- [ ] **Step 2: Run the focused Rust tests** with `cargo test -p foster-agent mumu::cli` and verify the missing parser/adapter fails.
-- [ ] **Step 3: Implement the typed CLI adapter** using `tokio::process::Command`, argument vectors, timeout, JSON parsing, and redacted error messages.
-- [ ] **Step 4: Add environment parsing** for `FOSTER_MUMU_CLI_PATH`, `FOSTER_MUMU_APP_MARKET_PACKAGE`, `FOSTER_MUMU_APP_MARKET_ACTIVITY`, `FOSTER_FULL_CHANNEL_PACKAGE`, `FOSTER_NORMAL_PACKAGE`, `FOSTER_RESOLUTION_WIDTH`, `FOSTER_RESOLUTION_HEIGHT`, and timeout values with defaults from the spec.
-- [ ] **Step 5: Run the focused tests** and commit as `feat: add MuMu CLI configuration adapter`.
+- [x] **Step 1: Write failing parser tests** for the observed `mumu-cli info --vmindex all` JSON, malformed JSON, non-zero exit, and timeout.
+- [x] **Step 2: Run the focused Rust tests** with `cargo test -p foster-agent mumu::cli` and verify the missing parser/adapter fails.
+- [x] **Step 3: Implement the typed CLI adapter** using `tokio::process::Command`, argument vectors, timeout, JSON parsing, and redacted error messages.
+- [x] **Step 4: Add environment parsing** for `FOSTER_MUMU_CLI_PATH`, `FOSTER_MUMU_APP_MARKET_PACKAGE`, `FOSTER_MUMU_APP_MARKET_ACTIVITY`, `FOSTER_FULL_CHANNEL_PACKAGE`, `FOSTER_NORMAL_PACKAGE`, `FOSTER_RESOLUTION_WIDTH`, `FOSTER_RESOLUTION_HEIGHT`, and timeout values with defaults from the spec.
+- [x] **Step 5: Run the focused tests** and commit as `feat: add MuMu CLI configuration adapter`.
 
 ### Task 2: Implement idle-instance discovery and leases
 
@@ -61,11 +61,11 @@
 - Produces `InstanceLeaseManager::acquire(instances, active_command_instances) -> Result<InstanceLease, LeaseError>`.
 - `InstanceLease` exposes the selected `MumuInstanceInfo`, computed ADB serial, and an async release guard.
 
-- [ ] **Step 1: Write failing lease tests** for first-idle selection, exclusion of active/ADB-offline instances, deterministic index ordering, and concurrent acquisition of one instance.
-- [ ] **Step 2: Run the lease tests** and verify they fail before the manager exists.
-- [ ] **Step 3: Implement the manager** with an async mutex keyed by MuMu index and explicit release on drop/cancel paths.
-- [ ] **Step 4: Integrate lease acquisition into login preparation** so the selected instance is held from preparation through QR expiry, confirmation, cancellation, or failure.
-- [ ] **Step 5: Run Agent tests** and commit as `feat: lease idle MuMu instances for login`.
+- [x] **Step 1: Write failing lease tests** for first-idle selection, exclusion of active/ADB-offline instances, deterministic index ordering, and concurrent acquisition of one instance.
+- [x] **Step 2: Run the lease tests** and verify they fail before the manager exists.
+- [x] **Step 3: Implement the manager** with an async mutex keyed by MuMu index and explicit release on drop/cancel paths.
+- [x] **Step 4: Integrate lease acquisition into login preparation** so the selected instance is held from preparation through QR expiry, confirmation, cancellation, or failure.
+- [x] **Step 5: Run Agent tests** and commit as `feat: lease idle MuMu instances for login`.
 
 ### Task 3: Add resolution, package cleanup, and app-market installation
 
@@ -82,12 +82,12 @@
 - Produces `AppMarketInstaller::install_full_channel(adb_serial) -> Result<(), InstallError>`.
 - `PreparedInstance` contains the selected MuMu index, ADB serial, and OAS config name.
 
-- [ ] **Step 1: Write failing preparation tests** for resolution command generation, uninstalling `com.netease.onmyoji` on every discovered instance, rejecting a missing/incorrect full-channel package, and accepting `com.netease.onmyoji.wyzymnqsd_cps`.
-- [ ] **Step 2: Write failing app-market workflow tests** using a fake ADB runner for launching `com.mumu.store/.MainActivity`, finding the “阴阳师” search result, requiring the “全渠道” selection, confirming installation, and timing out safely.
-- [ ] **Step 3: Implement resolution and package hygiene** with `mumu-cli setting`, `adb shell pm uninstall`, and `adb shell pm list packages`; never call the game launch command before package validation passes.
-- [ ] **Step 4: Implement the app-market installer** behind a trait so tests use a fake UI tree; the real implementation uses ADB UI hierarchy/text queries and coordinate-independent selectors, not blind fixed taps.
-- [ ] **Step 5: Add package-install and market timeout/error messages** to the login executor and map them to the existing terminal login failure event.
-- [ ] **Step 6: Run focused tests** and commit as `feat: prepare MuMu full-channel package for login`.
+- [x] **Step 1: Write failing preparation tests** for resolution command generation, uninstalling `com.netease.onmyoji` on every discovered instance, rejecting a missing/incorrect full-channel package, and accepting `com.netease.onmyoji.wyzymnqsd_cps`.
+- [x] **Step 2: Write failing app-market workflow tests** using a fake ADB runner for launching `com.mumu.store/.MainActivity`, finding the “阴阳师” search result, requiring the “全渠道” selection, confirming installation, and timing out safely.
+- [x] **Step 3: Implement resolution and package hygiene** with `mumu-cli setting`, `adb shell pm uninstall`, and `adb shell pm list packages`; never call the game launch command before package validation passes.
+- [x] **Step 4: Implement the app-market installer** behind a trait so tests use a fake UI tree; the real implementation uses ADB UI hierarchy/text queries and coordinate-independent selectors, not blind fixed taps.
+- [x] **Step 5: Add package-install and market timeout/error messages** to the login executor and map them to the existing terminal login failure event.
+- [x] **Step 6: Run focused tests** and commit as `feat: prepare MuMu full-channel package for login`.
 
 ### Task 4: Connect preparation to QR capture and runtime events
 
@@ -101,11 +101,11 @@
 - `HttpOasLoginExecutor::prepare` calls `MumuLoginPreparer`, launches only the validated full-channel package, waits for the login screen, then captures `adb exec-out screencap -p`.
 - Existing `wait_identity` continues polling OAS `/login/detect` after QR scan.
 
-- [ ] **Step 1: Write a failing integration test** with fake MuMu/ADB/OAS adapters proving the order: lease → resolution → uninstall normal package → app-market full-channel install → launch full-channel package → screenshot.
-- [ ] **Step 2: Add failure tests** proving that a failed market install and wrong package stop before `monkey` launch and release the lease.
-- [ ] **Step 3: Implement the executor wiring** while preserving the existing `QR_READY` payload shape and login H5 contract.
-- [ ] **Step 4: Verify cancellation and timeout** release the lease and send the existing failure event without leaking screenshot data to logs.
-- [ ] **Step 5: Run Agent tests** and commit as `feat: wire MuMu preparation into QR login flow`.
+- [x] **Step 1: Write a failing integration test** with fake MuMu/ADB/OAS adapters proving the order: lease → resolution → uninstall normal package → app-market full-channel install → launch full-channel package → screenshot.
+- [x] **Step 2: Add failure tests** proving that a failed market install and wrong package stop before `monkey` launch and release the lease.
+- [x] **Step 3: Implement the executor wiring** while preserving the existing `QR_READY` payload shape and login H5 contract.
+- [x] **Step 4: Verify cancellation and timeout** release the lease and send the existing failure event without leaking screenshot data to logs.
+- [x] **Step 5: Run Agent tests** and commit as `feat: wire MuMu preparation into QR login flow`.
 
 ### Task 5: Update deployment configuration and operator diagnostics
 
@@ -119,11 +119,11 @@
 - Example config documents the MuMu CLI path, `com.mumu.store/.MainActivity`, full-channel and normal package IDs, 1280×720 resolution, and timeouts.
 - `Test-MumuFullChannel.ps1` performs read-only checks for CLI availability, instance discovery, package states, ADB reachability, and OAS reachability.
 
-- [ ] **Step 1: Add a failing documentation/config validation check** that required example keys and package IDs are present.
-- [ ] **Step 2: Update the example environment** with Windows paths matching `C:\Program Files\Netease\MuMu\nx_main\mumu-cli.exe` and the agreed defaults.
-- [ ] **Step 3: Implement the read-only preflight script** using `mumu-cli info`, ADB package queries, and OAS `/openapi.json`; it must not uninstall or install anything.
-- [ ] **Step 4: Document the destructive normal-package cleanup and the exact QR flow** in the deployment README.
-- [ ] **Step 5: Run PowerShell preflight and commit as `docs: document MuMu full-channel deployment`.
+- [x] **Step 1: Add a failing documentation/config validation check** that required example keys and package IDs are present.
+- [x] **Step 2: Update the example environment** with Windows paths matching `C:\Program Files\Netease\MuMu\nx_main\mumu-cli.exe` and the agreed defaults.
+- [x] **Step 3: Implement the read-only preflight script** using `mumu-cli info`, ADB package queries, and OAS `/openapi.json`; it must not uninstall or install anything.
+- [x] **Step 4: Document the destructive normal-package cleanup and the exact QR flow** in the deployment README.
+- [x] **Step 5: Run PowerShell preflight and commit as `docs: document MuMu full-channel deployment`.
 
 ### Task 6: Verify on the real MuMu installation
 
@@ -131,10 +131,10 @@
 - No product source changes unless a verification defect is found.
 - Test outputs: `foster-platform/target/` and local runtime logs remain untracked/ignored.
 
-- [ ] **Step 1: Run the focused Rust unit and integration tests** for Agent and protocol crates.
-- [ ] **Step 2: Run `Test-MumuFullChannel.ps1`** and record the detected MuMu instances and package states.
+- [x] **Step 1: Run the focused Rust unit and integration tests** for Agent and protocol crates.
+- [x] **Step 2: Run `Test-MumuFullChannel.ps1`** and record the detected MuMu instances and package states.
 - [ ] **Step 3: Execute one real login preparation** with the selected idle instance; verify resolution 1280×720, ordinary package removal, full-channel package presence, game launch, and `QR_READY`.
 - [ ] **Step 4: Open the generated login H5, scan the QR code, and verify OAS `/login/detect` returns the account identity.
 - [ ] **Step 5: Verify the service page and confirm no Agent token, control token, or QR base64 appears in logs.
-- [ ] **Step 6: Run the full workspace test command and report any Windows Application Control limitation separately from code failures.
+- [x] **Step 6: Run the full workspace test command and report any Windows Application Control limitation separately from code failures.
 
