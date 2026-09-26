@@ -72,6 +72,31 @@ class LoginDetectService:
                 message=f"login identity detection not ready: {error}",
             )
 
+    def _select_platform_if_needed(self, detector: LoginAccount, platform: str) -> None:
+        platform = (platform or "").strip().upper()
+        detector.screenshot()
+
+        if not (
+            detector.appear(detector.I_SA_LOGIN_FORM_APPLE)
+            or detector.appear(detector.I_SA_LOGIN_FORM_ANDROID)
+        ):
+            return
+
+        if platform == "ANDROID":
+            detector.ui_click_until_disappear(
+                detector.I_SA_LOGIN_FORM_ANDROID,
+                interval=0.7,
+            )
+        elif platform == "IOS":
+            detector.ui_click_until_disappear(
+                detector.I_SA_LOGIN_FORM_APPLE,
+                interval=0.7,
+            )
+        else:
+            raise ValueError(f"unsupported login platform: {platform}")
+
+        time.sleep(0.8)
+
     def _normalize_login_form(self, detector: LoginAccount) -> None:
         if detector.appear(detector.I_SA_CHECK_SELECT_SVR_1) or detector.appear(
             detector.I_SA_CHECK_SELECT_SVR_2
