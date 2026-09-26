@@ -227,6 +227,63 @@ pub async fn update_emulator_heartbeats(
     let mut tx = pool.begin().await?;
 
     for item in items {
+        if item.occupancy == EmulatorOccupancyStatus::Idle {
+            sqlx::query(
+                "UPDATE emulator_instance
+                 SET status = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN 'ERROR'
+                         ELSE ?
+                     END,
+                     lifecycle_status = ?,
+                     occupancy_status = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN 'RECOVERY'
+                         ELSE 'IDLE'
+                     END,
+                     activity_type = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN activity_type
+                         ELSE 'NONE'
+                     END,
+                     activity_stage = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN activity_stage
+                         ELSE NULL
+                     END,
+                     current_command_id = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN current_command_id
+                         ELSE NULL
+                     END,
+                     current_foster_job_id = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN current_foster_job_id
+                         ELSE NULL
+                     END,
+                     current_login_session_no = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN current_login_session_no
+                         ELSE NULL
+                     END,
+                     current_game_account_id = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN current_game_account_id
+                         ELSE NULL
+                     END,
+                     activity_started_at = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN activity_started_at
+                         ELSE NULL
+                     END,
+                     last_heartbeat_at = NOW(3)
+                 WHERE host_id = ?
+                   AND emulator_code = ?",
+            )
+            .bind(emulator_legacy_status_name(
+                item.lifecycle,
+                item.occupancy,
+                item.activity,
+            ))
+            .bind(emulator_lifecycle_name(item.lifecycle))
+            .bind(host_id)
+            .bind(&item.emulator_code)
+            .execute(&mut *tx)
+            .await?;
+            continue;
+        }
+
         sqlx::query(
             "UPDATE emulator_instance
              SET status = ?,
