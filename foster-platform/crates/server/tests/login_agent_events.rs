@@ -21,9 +21,9 @@ async fn seed_emulator(pool: &MySqlPool, host_id: i64) -> anyhow::Result<i64> {
     let result = sqlx::query(
         "INSERT INTO emulator_instance(
             host_id, emulator_code, driver_type,
-            max_account_count, status
+            max_account_count, status, lifecycle_status, occupancy_status
          )
-         VALUES (?, 'emu-events', 'FAKE', 5, 'IDLE')",
+         VALUES (?, 'emu-events', 'FAKE', 5, 'IDLE', 'READY', 'IDLE')",
     )
     .bind(host_id)
     .execute(pool)
