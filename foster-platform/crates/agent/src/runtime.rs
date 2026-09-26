@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use foster_domain::EmulatorStatus;
+use foster_domain::{EmulatorActivity, EmulatorLifecycleStatus};
 use foster_protocol::{
     AgentEnvelope, AgentEvent, AgentHello, EmulatorHeartbeat, EmulatorSnapshot, Heartbeat,
     LoginFailed, LoginIdentityDetected, LoginPreparing, LoginQrReady, PROTOCOL_VERSION, Pong,
@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::{
     command_journal::{CommandDecision, CommandJournal, CommandJournalError},
     config::AgentConfig,
-    emulator::{EmulatorDriver, EmulatorDriverError},
+    emulator::{EmulatorDriver, EmulatorDriverError, EmulatorRuntimeRegistry},
     foster::{FosterExecutor, FosterExecutorError, events_for_execution},
     login::{LoginExecutor, LoginExecutorError},
     outbox::AgentEventOutbox,
@@ -48,6 +48,7 @@ pub struct AgentRuntime<D: EmulatorDriver> {
     foster_executor: Option<Arc<dyn FosterExecutor>>,
     command_journal: CommandJournal,
     outbox: AgentEventOutbox,
+    emulator_runtime: EmulatorRuntimeRegistry,
 }
 
 impl<D: EmulatorDriver> AgentRuntime<D> {
@@ -59,6 +60,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             foster_executor: None,
             command_journal: CommandJournal::in_memory(),
             outbox: AgentEventOutbox::default(),
+            emulator_runtime: EmulatorRuntimeRegistry::default(),
         }
     }
 
@@ -203,6 +205,30 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             CommandDecision::StartNew => {}
         }
 
+        let runtime_lease = match self.emulator_runtime.try_acquire(
+            &command.emulator_code,
+            command_id,
+            EmulatorActivity::Foster,
+            Some(command.game_account_id),
+            Some(command.job_id),
+            None,
+        ) {
+            Ok(lease) => lease,
+            Err(error) => {
+                let event = AgentEvent::FosterFailed(foster_protocol::FosterFailed {
+                    job_id: command.job_id,
+                    attempt: command.attempt,
+                    failed_at: chrono::Utc::now(),
+                    error_code: foster_domain::FosterErrorCode::GameBusy,
+                    message: error.to_string(),
+                    screenshot_url: None,
+                });
+                self.command_journal.finish(command_id, event.clone())?;
+                self.outbox.push(event);
+                return Ok(());
+            }
+        };
+
         let Some(executor) = self.foster_executor.clone() else {
             let event = AgentEvent::FosterFailed(foster_protocol::FosterFailed {
                 job_id: command.job_id,
@@ -221,6 +247,8 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         let outbox = self.outbox.clone();
 
         tokio::spawn(async move {
+            let runtime_lease = runtime_lease;
+            runtime_lease.set_stage("EXECUTING");
             let job_id = command.job_id;
             let attempt = command.attempt;
 
@@ -272,6 +300,27 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
             CommandDecision::StartNew => {}
         }
 
+        let runtime_lease = match self.emulator_runtime.try_acquire(
+            &command.emulator_code,
+            command_id,
+            EmulatorActivity::Login,
+            Some(command.game_account_id),
+            None,
+            Some(command.session_no.clone()),
+        ) {
+            Ok(lease) => lease,
+            Err(error) => {
+                let event = AgentEvent::LoginFailed(LoginFailed {
+                    session_no: command.session_no,
+                    code: "EMULATOR_BUSY".to_string(),
+                    message: error.to_string(),
+                });
+                self.command_journal.finish(command_id, event.clone())?;
+                self.outbox.push(event);
+                return Ok(());
+            }
+        };
+
         let Some(executor) = self.login_executor.clone() else {
             let event = AgentEvent::LoginFailed(LoginFailed {
                 session_no: command.session_no,
@@ -287,6 +336,8 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
         let outbox = self.outbox.clone();
 
         tokio::spawn(async move {
+            let runtime_lease = runtime_lease;
+            runtime_lease.set_stage("PREPARING");
             outbox.push(AgentEvent::LoginPreparing(LoginPreparing {
                 session_no: command.session_no.clone(),
             }));
@@ -324,6 +375,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 qr_payload: prepared.qr_payload,
                 expires_at: chrono::Utc::now() + qr_ttl,
             }));
+            runtime_lease.set_stage("WAITING_IDENTITY");
 
             let identity = match executor.wait_identity(&command).await {
                 Ok(identity) => identity,
@@ -339,6 +391,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 }
             };
 
+            runtime_lease.set_stage("IDENTITY_DETECTED");
             let event = AgentEvent::LoginIdentityDetected(LoginIdentityDetected {
                 session_no: command.session_no,
                 masked_account: identity.masked_account,
@@ -394,14 +447,23 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
     async fn send_heartbeat(&self, socket: &mut AgentWebSocket) -> Result<(), AgentRuntimeError> {
         let mut emulators = Vec::new();
         for emulator in self.driver.list_instances().await? {
-            let status = self
+            let lifecycle = self
                 .driver
                 .status(&emulator.emulator_code)
                 .await
-                .unwrap_or(EmulatorStatus::Error);
+                .unwrap_or(EmulatorLifecycleStatus::Error);
+            let runtime = self.emulator_runtime.snapshot(&emulator.emulator_code);
             emulators.push(EmulatorHeartbeat {
                 emulator_code: emulator.emulator_code,
-                status,
+                lifecycle,
+                occupancy: runtime.occupancy,
+                activity: runtime.activity,
+                activity_stage: runtime.activity_stage,
+                current_command_id: runtime.current_command_id,
+                current_job_id: runtime.current_job_id,
+                current_login_session_no: runtime.current_login_session_no,
+                current_game_account_id: runtime.current_game_account_id,
+                activity_started_at: runtime.activity_started_at,
             });
         }
 
