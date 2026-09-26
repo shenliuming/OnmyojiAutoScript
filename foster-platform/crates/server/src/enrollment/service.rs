@@ -101,6 +101,9 @@ impl EnrollmentService {
             }
             AgentEvent::LoginQrExpired(event) => {
                 mark_login_qr_expired(&self.pool, host_id, &event.session_no).await?;
+                EmulatorLeaseService::new(self.pool.clone())
+                    .release_owner("LOGIN", &event.session_no)
+                    .await?;
             }
             AgentEvent::LoginIdentityDetected(event) => {
                 mark_login_identity_detected(
@@ -143,6 +146,9 @@ impl EnrollmentService {
         reason: &str,
     ) -> Result<(), EnrollmentError> {
         mark_login_failed(&self.pool, host_id, session_no, reason).await?;
+        EmulatorLeaseService::new(self.pool.clone())
+            .release_owner("LOGIN", session_no)
+            .await?;
         Ok(())
     }
 
@@ -303,6 +309,13 @@ impl EnrollmentService {
 
             if cancel_login_session_row(&mut tx, session.id, "SESSION_EXPIRED").await? {
                 release_pending_binding_tx(&mut tx, session.binding_id).await?;
+                release_emulator_lease(
+                    &mut tx,
+                    session.emulator_id,
+                    "LOGIN",
+                    &session.session_no,
+                )
+                .await?;
                 expired += 1;
             }
 
@@ -334,6 +347,13 @@ impl EnrollmentService {
 
         if cancel_login_session_row(&mut tx, session.id, "USER_CANCELLED").await? {
             release_pending_binding_tx(&mut tx, session.binding_id).await?;
+            release_emulator_lease(
+                &mut tx,
+                session.emulator_id,
+                "LOGIN",
+                &session.session_no,
+            )
+            .await?;
         }
 
         tx.commit().await?;
