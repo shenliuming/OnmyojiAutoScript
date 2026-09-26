@@ -12,7 +12,6 @@ pub enum EmulatorStatus {
     Error,
 }
 
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EmulatorLifecycleStatus {
