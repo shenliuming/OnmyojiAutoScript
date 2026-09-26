@@ -23,12 +23,12 @@ use super::{
         NewLoginSession, TrustedIdentityRow, activate_game_account, activate_pending_binding,
         activate_pending_subscriptions, cancel_login_session_row, complete_login_session,
         find_expired_login_session_ids, insert_enrollment_identity, insert_login_session,
-        insert_user_confirmed_uid,
-        load_trusted_identities, lock_binding, lock_game_account, lock_login_dispatch_target,
-        lock_login_session_by_control_hash, lock_login_session_by_id, mark_login_failed,
-        mark_login_identity_detected, mark_login_preparing, mark_login_preparing_after_dispatch,
-        mark_login_qr_expired, mark_login_qr_ready, mark_login_waiting_emulator,
-        release_pending_binding, release_pending_binding_tx, update_game_account_login_target,
+        insert_user_confirmed_uid, load_trusted_identities, lock_binding, lock_game_account,
+        lock_login_dispatch_target, lock_login_session_by_control_hash, lock_login_session_by_id,
+        mark_login_failed, mark_login_identity_detected, mark_login_preparing,
+        mark_login_preparing_after_dispatch, mark_login_qr_expired, mark_login_qr_ready,
+        mark_login_waiting_emulator, release_pending_binding, release_pending_binding_tx,
+        update_game_account_login_target,
     },
 };
 
@@ -163,11 +163,17 @@ impl EnrollmentService {
             }
         }
 
-        let platform = target.platform.filter(|value| !value.trim().is_empty())
+        let platform = target
+            .platform
+            .filter(|value| !value.trim().is_empty())
             .ok_or(EnrollmentError::InvalidLoginTarget)?;
-        let character_name = target.character_name.filter(|value| !value.trim().is_empty())
+        let character_name = target
+            .character_name
+            .filter(|value| !value.trim().is_empty())
             .ok_or(EnrollmentError::InvalidLoginTarget)?;
-        let game_uid = target.game_uid.filter(|value| !value.trim().is_empty())
+        let game_uid = target
+            .game_uid
+            .filter(|value| !value.trim().is_empty())
             .ok_or(EnrollmentError::InvalidLoginTarget)?;
 
         let command = ServerCommand::StartLogin(StartLoginCommand {
@@ -495,8 +501,7 @@ fn sha256_hex(value: &str) -> String {
 }
 
 fn first_enrollment_has_strong_identity(detected: &DetectedIdentity) -> bool {
-    has_text(detected.character_name.as_deref())
-        && has_text(detected.server_name.as_deref())
+    has_text(detected.character_name.as_deref()) && has_text(detected.server_name.as_deref())
 }
 
 fn has_text(value: Option<&str>) -> bool {
