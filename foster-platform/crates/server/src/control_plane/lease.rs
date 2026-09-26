@@ -123,8 +123,7 @@ pub async fn try_acquire_emulator_lease(
     }
 
     let expires_at = Utc::now()
-        + chrono::Duration::from_std(ttl)
-            .unwrap_or_else(|_| chrono::Duration::minutes(15));
+        + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::minutes(15));
     let lease_token = command_id;
 
     sqlx::query(
@@ -148,7 +147,6 @@ pub async fn try_acquire_emulator_lease(
         lease_token,
     }))
 }
-
 
 pub async fn release_emulator_lease(
     tx: &mut Transaction<'_, MySql>,
