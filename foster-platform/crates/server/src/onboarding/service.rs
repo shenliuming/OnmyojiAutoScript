@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::{
     agent_gateway::registry::AgentRegistry,
     control_plane::AllocationError,
-    enrollment::{DispatchLoginResult, EnrollmentError, EnrollmentService},
+    enrollment::{EnrollmentError, EnrollmentService},
     public_portal::{PublicPortalError, PublicPortalService},
 };
 
@@ -157,13 +157,5 @@ fn map_enrollment_error(error: EnrollmentError) -> OnboardingError {
     match error {
         EnrollmentError::Allocation(AllocationError::NoCapacity) => OnboardingError::NoCapacity,
         other => OnboardingError::Enrollment(other),
-    }
-}
-
-fn dispatch_status_name(status: DispatchLoginResult) -> &'static str {
-    match status {
-        DispatchLoginResult::Dispatched => "DISPATCHED",
-        DispatchLoginResult::WaitingEmulator => "WAITING_EMULATOR",
-        DispatchLoginResult::AlreadyDispatched => "ALREADY_DISPATCHED",
     }
 }
