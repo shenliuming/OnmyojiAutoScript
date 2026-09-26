@@ -226,13 +226,8 @@ impl EnrollmentService {
                 Ok(DispatchLoginResult::Dispatched)
             }
             Ok(Err(_)) | Err(_) => {
-                release_emulator_lease(
-                    &mut tx,
-                    target.emulator_id,
-                    "LOGIN",
-                    &target.session_no,
-                )
-                .await?;
+                release_emulator_lease(&mut tx, target.emulator_id, "LOGIN", &target.session_no)
+                    .await?;
                 mark_login_waiting_emulator(&mut tx, target.id).await?;
                 tx.commit().await?;
                 Ok(DispatchLoginResult::WaitingEmulator)
