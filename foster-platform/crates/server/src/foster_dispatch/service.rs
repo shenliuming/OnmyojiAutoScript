@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     agent_gateway::registry::{AgentRegistry, AgentSendError},
+    control_plane::EmulatorLeaseService,
     resource_pool::{ReserveForJobResult, ResourcePoolError, ResourcePoolService},
     scheduler::{SchedulerError, SchedulerService},
 };
@@ -134,6 +135,27 @@ impl FosterDispatchService {
             ),
         };
 
+        let command_id = foster_command_id(job_id, target.retry_count);
+        let lease_owner = job_id.to_string();
+        let lease = EmulatorLeaseService::new(self.pool.clone())
+            .try_acquire(
+                target.emulator_id,
+                command_id,
+                "FOSTER",
+                &lease_owner,
+                Duration::from_secs(15 * 60),
+            )
+            .await?;
+
+        if lease.is_none() {
+            if resource_mode == ResourceMode::Platform {
+                ResourcePoolService::new(self.pool.clone())
+                    .release_for_job(job_id, "emulator is busy", now)
+                    .await?;
+            }
+            return Ok(DispatchFosterResult::WaitingEmulator);
+        }
+
         let command = ServerCommand::ExecuteFoster(ExecuteFosterCommand {
             job_id,
             attempt: target.retry_count,
@@ -147,11 +169,7 @@ impl FosterDispatchService {
 
         let delivered = tokio::time::timeout(
             Duration::from_secs(5),
-            registry.send_command_with_id(
-                target.host_id,
-                foster_command_id(job_id, target.retry_count),
-                command,
-            ),
+            registry.send_command_with_id(target.host_id, command_id, command),
         )
         .await;
 
@@ -159,6 +177,9 @@ impl FosterDispatchService {
             Ok(Ok(())) => Ok(DispatchFosterResult::Dispatched),
             Ok(Err(AgentSendError::Offline | AgentSendError::QueueClosed)) => {
                 // Definitively not queued on an active WebSocket.
+                EmulatorLeaseService::new(self.pool.clone())
+                    .release_owner("FOSTER", &lease_owner)
+                    .await?;
                 if resource_mode == ResourceMode::Platform {
                     ResourcePoolService::new(self.pool.clone())
                         .release_for_job(job_id, "agent was offline before delivery", now)
@@ -222,6 +243,14 @@ impl FosterDispatchService {
         if !self.is_current_attempt(event.job_id, event.attempt).await? {
             return Ok(());
         }
+
+        EmulatorLeaseService::new(self.pool.clone())
+            .release_owner("FOSTER", &event.job_id.to_string())
+            .await?;
+
+        EmulatorLeaseService::new(self.pool.clone())
+            .release_owner("FOSTER", &event.job_id.to_string())
+            .await?;
 
         let Some(status) = current_job_status(&self.pool, event.job_id).await? else {
             return Ok(());
