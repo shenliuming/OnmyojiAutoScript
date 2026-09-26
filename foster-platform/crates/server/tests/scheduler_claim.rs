@@ -26,16 +26,19 @@ async fn seed_emulator(
     suffix: &str,
     status: &str,
 ) -> anyhow::Result<i64> {
+    let lifecycle_status = if status == "IDLE" { "READY" } else { status };
+
     Ok(sqlx::query(
         "INSERT INTO emulator_instance(
             host_id, emulator_code, driver_type,
-            max_account_count, status
+            max_account_count, status, lifecycle_status
          )
-         VALUES (?, ?, 'FAKE', 5, ?)",
+         VALUES (?, ?, 'FAKE', 5, ?, ?)",
     )
     .bind(host_id)
     .bind(format!("emu-claim-{suffix}"))
     .bind(status)
+    .bind(lifecycle_status)
     .execute(pool)
     .await?
     .last_insert_id() as i64)
