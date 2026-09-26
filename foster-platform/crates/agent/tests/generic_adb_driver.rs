@@ -136,7 +136,7 @@ fn duplicate_emulator_code_is_rejected() {
 
 #[tokio::test]
 async fn adb_state_controls_emulator_health() -> anyhow::Result<()> {
-    use foster_domain::EmulatorStatus;
+    use foster_domain::EmulatorLifecycleStatus;
 
     let runner = FakeRunner::with_outputs(vec![
         CommandOutput {
@@ -153,8 +153,8 @@ async fn adb_state_controls_emulator_health() -> anyhow::Result<()> {
     let driver =
         GenericAdbEmulatorDriver::from_json_with_runner(config_json(), "adb".into(), runner)?;
 
-    assert_eq!(driver.status("emu-01").await?, EmulatorStatus::Idle);
-    assert_eq!(driver.status("emu-01").await?, EmulatorStatus::Offline);
+    assert_eq!(driver.status("emu-01").await?, EmulatorLifecycleStatus::Ready);
+    assert_eq!(driver.status("emu-01").await?, EmulatorLifecycleStatus::Offline);
 
     Ok(())
 }
