@@ -168,7 +168,10 @@ where
         wait_package_running(&self.runner, &self.adb_program, serial, package, timeout).await
     }
 
-    pub async fn screenshot_for_serial(&self, serial: &str) -> Result<Vec<u8>, EmulatorDriverError> {
+    pub async fn screenshot_for_serial(
+        &self,
+        serial: &str,
+    ) -> Result<Vec<u8>, EmulatorDriverError> {
         capture_screenshot(&self.runner, &self.adb_program, serial).await
     }
 
@@ -363,6 +366,7 @@ pub async fn query_installed_packages<R: CommandRunner>(
     adb_program: &str,
     serial: &str,
 ) -> Result<Vec<String>, EmulatorDriverError> {
+    ensure_adb_connected(runner, adb_program, serial).await;
     let args = adb_shell_args(serial, &["pm", "list", "packages"]);
     let output = runner.run(adb_program, &args).await?;
     if !output.success {
@@ -376,7 +380,11 @@ pub async fn query_installed_packages<R: CommandRunner>(
 pub fn parse_package_listing(stdout: &[u8]) -> Vec<String> {
     String::from_utf8_lossy(stdout)
         .lines()
-        .filter_map(|line| line.trim().strip_prefix("package:").map(ToString::to_string))
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("package:")
+                .map(ToString::to_string)
+        })
         .collect()
 }
 
@@ -386,6 +394,7 @@ pub async fn uninstall_package<R: CommandRunner>(
     serial: &str,
     package: &str,
 ) -> Result<(), EmulatorDriverError> {
+    ensure_adb_connected(runner, adb_program, serial).await;
     let args = adb_shell_args(serial, &["pm", "uninstall", package]);
     let output = runner.run(adb_program, &args).await?;
     if !output.success {
@@ -499,7 +508,11 @@ pub async fn capture_screenshot<R: CommandRunner>(
     ];
     let output = runner.run(adb_program, &args).await?;
     if !output.success || output.stdout.is_empty() {
-        return Err(command_failure("adb screenshot", adb_program, &output.stderr));
+        return Err(command_failure(
+            "adb screenshot",
+            adb_program,
+            &output.stderr,
+        ));
     }
     Ok(output.stdout)
 }

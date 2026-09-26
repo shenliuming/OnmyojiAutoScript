@@ -6,15 +6,14 @@ pub mod preparer;
 use async_trait::async_trait;
 
 pub use app_market::{
-    AppMarketInstaller, AdbMarketUi, InstallError, MarketNode, MarketUi, parse_bounds,
+    AdbMarketUi, AppMarketInstaller, InstallError, MarketNode, MarketUi, parse_bounds,
     parse_ui_dump,
 };
 pub use cli::{
-    CommandOutput, MumuCli, MumuConfig, MumuError, MumuInstanceInfo, launch_args,
-    resolution_args,
+    CommandOutput, MumuCli, MumuConfig, MumuError, MumuInstanceInfo, launch_args, resolution_args,
 };
 pub use lease::{InstanceLease, InstanceLeaseManager, LeaseError, MumuInstanceSource};
-pub use preparer::{MumuLoginPreparer, PreparedInstance, PrepareError};
+pub use preparer::{MumuLoginPreparer, PrepareError, PreparedInstance};
 
 /// Control surface for MuMu instances used during login preparation.
 #[async_trait]

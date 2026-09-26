@@ -105,7 +105,10 @@ impl MumuConfig {
                 "FOSTER_MUMU_COMMAND_TIMEOUT_SECONDS",
                 &mut config.command_timeout,
             ),
-            ("FOSTER_MUMU_MARKET_TIMEOUT_SECONDS", &mut config.market_timeout),
+            (
+                "FOSTER_MUMU_MARKET_TIMEOUT_SECONDS",
+                &mut config.market_timeout,
+            ),
             (
                 "FOSTER_MUMU_MARKET_POLL_SECONDS",
                 &mut config.market_poll_interval,

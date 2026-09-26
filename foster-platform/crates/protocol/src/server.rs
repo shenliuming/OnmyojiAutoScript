@@ -21,6 +21,20 @@ pub struct CancelLoginCommand {
     pub session_no: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum LoginPlatform {
+    Android,
+    Ios,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelectLoginPlatformCommand {
+    pub session_no: String,
+    pub emulator_code: String,
+    pub platform: LoginPlatform,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FosterTargetIdentity {
     pub masked_account: Option<String>,
@@ -49,5 +63,6 @@ pub enum ServerCommand {
     RefreshEmulators(RefreshEmulatorsCommand),
     StartLogin(StartLoginCommand),
     CancelLogin(CancelLoginCommand),
+    SelectLoginPlatform(SelectLoginPlatformCommand),
     ExecuteFoster(ExecuteFosterCommand),
 }

@@ -6,8 +6,8 @@ use foster_agent::{
     emulator::{CommandOutput, CommandRunner, EmulatorDriverError, GenericAdbEmulatorDriver},
     login::{HttpOasLoginExecutor, LoginExecutor},
     mumu::{
-        AppMarketInstaller, MumuConfig, MumuController, MumuError, MumuInstanceInfo,
-        MumuLoginPreparer, MarketUi,
+        AppMarketInstaller, MarketUi, MumuConfig, MumuController, MumuError, MumuInstanceInfo,
+        MumuLoginPreparer,
     },
 };
 use foster_protocol::StartLoginCommand;
@@ -44,6 +44,16 @@ impl CommandRunner for FakeRunner {
         program: &str,
         args: &[String],
     ) -> Result<CommandOutput, EmulatorDriverError> {
+        if args.first().map(String::as_str) == Some("connect")
+            && self
+                .calls
+                .lock()
+                .await
+                .iter()
+                .any(|call| call.starts_with("adb connect "))
+        {
+            return Ok(ok("connected\n"));
+        }
         self.calls
             .lock()
             .await
@@ -155,6 +165,9 @@ impl MarketUi for FakeMarketUi {
             .lock()
             .await
             .push(format!("has_text:{serial}:{text}"));
+        if text == "全渠道扫码" {
+            return Ok(false);
+        }
         Ok(!(self.fail_full_channel && text == "全渠道"))
     }
 
@@ -163,11 +176,7 @@ impl MarketUi for FakeMarketUi {
         Ok(())
     }
 
-    async fn package_installed(
-        &self,
-        serial: &str,
-        package: &str,
-    ) -> Result<bool, InstallError> {
+    async fn package_installed(&self, serial: &str, package: &str) -> Result<bool, InstallError> {
         self.calls
             .lock()
             .await
@@ -207,9 +216,12 @@ fn executor(
     controller: Arc<FakeController>,
     market: Arc<FakeMarketUi>,
 ) -> HttpOasLoginExecutor<FakeRunner> {
-    let driver =
-        GenericAdbEmulatorDriver::from_json_with_runner(config_json(), "adb".into(), runner.clone())
-            .unwrap();
+    let driver = GenericAdbEmulatorDriver::from_json_with_runner(
+        config_json(),
+        "adb".into(),
+        runner.clone(),
+    )
+    .unwrap();
     let installer = AppMarketInstaller::new(
         market,
         FULL,
@@ -246,16 +258,16 @@ fn command() -> StartLoginCommand {
 async fn prepare_orders_lease_to_screenshot_and_returns_qr() {
     let runner = FakeRunner::with_outputs(vec![
         ok("connected to 127.0.0.1:16384\n"), // adb connect
-        ok("device\n"),           // wait adb online
-        packages(&[NORMAL]),      // instance 0: ordinary package present
-        ok("Success\n"),          // uninstall on instance 0
-        packages(&[NORMAL]),      // instance 1: ordinary package present
-        ok("Success\n"),          // uninstall on instance 1
-        packages(&[]),            // decide: nothing installed yet
-        packages(&[FULL]),        // verify after market install
-        ok(""),                   // monkey launch of the full-channel package
-        ok("12345\n"),            // pidof
-        bytes(PNG),               // screencap
+        ok("device\n"),                       // wait adb online
+        packages(&[NORMAL]),                  // instance 0: ordinary package present
+        ok("Success\n"),                      // uninstall on instance 0
+        packages(&[NORMAL]),                  // instance 1: ordinary package present
+        ok("Success\n"),                      // uninstall on instance 1
+        packages(&[]),                        // decide: nothing installed yet
+        packages(&[FULL]),                    // verify after market install
+        ok(""),                               // monkey launch of the full-channel package
+        ok("12345\n"),                        // pidof
+        bytes(PNG),                           // screencap
     ]);
     let controller = Arc::new(FakeController::default());
     let market = Arc::new(FakeMarketUi {
@@ -280,13 +292,17 @@ async fn prepare_orders_lease_to_screenshot_and_returns_qr() {
         format!("adb -s {SERIAL} exec-out screencap -p"),
     ];
     assert_eq!(runner.calls().await, expected_calls);
-    assert_eq!(controller.calls().await, vec!["info_all", "resolution:0", "info_all"]);
+    assert_eq!(
+        controller.calls().await,
+        vec!["info_all", "resolution:0", "info_all"]
+    );
     assert_eq!(
         market.calls().await,
         vec![
             format!("launch:{SERIAL}"),
-            format!("search:{SERIAL}:阴阳师"),
+            format!("search:{SERIAL}:yys"),
             format!("tap:{SERIAL}:阴阳师"),
+            format!("has_text:{SERIAL}:全渠道扫码"),
             format!("has_text:{SERIAL}:全渠道"),
             format!("tap:{SERIAL}:全渠道"),
             format!("tap:{SERIAL}:安装"),
@@ -318,11 +334,13 @@ async fn failed_market_install_stops_before_launch() {
     let error = executor.prepare(&command()).await.unwrap_err();
 
     assert!(error.to_string().contains("full-channel"));
-    assert!(!runner
-        .calls()
-        .await
-        .iter()
-        .any(|call| call.contains("monkey")));
+    assert!(
+        !runner
+            .calls()
+            .await
+            .iter()
+            .any(|call| call.contains("monkey"))
+    );
 }
 
 #[tokio::test]
@@ -330,9 +348,9 @@ async fn wrong_installed_package_stops_before_launch() {
     let runner = FakeRunner::with_outputs(vec![
         ok("connected to 127.0.0.1:16384\n"), // adb connect
         ok("device\n"),
-        packages(&[]),               // instance 0 clean
-        packages(&[]),               // instance 1 clean
-        packages(&[]),               // decide: nothing installed
+        packages(&[]),                  // instance 0 clean
+        packages(&[]),                  // instance 1 clean
+        packages(&[]),                  // decide: nothing installed
         packages(&["com.other.wrong"]), // verify: a wrong package, not full-channel
     ]);
     let controller = Arc::new(FakeController::default());
@@ -345,9 +363,11 @@ async fn wrong_installed_package_stops_before_launch() {
     let error = executor.prepare(&command()).await.unwrap_err();
 
     assert!(error.to_string().contains(FULL));
-    assert!(!runner
-        .calls()
-        .await
-        .iter()
-        .any(|call| call.contains("monkey")));
+    assert!(
+        !runner
+            .calls()
+            .await
+            .iter()
+            .any(|call| call.contains("monkey"))
+    );
 }

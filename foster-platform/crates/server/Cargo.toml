@@ -13,6 +13,7 @@ foster-domain = { path = "../domain" }
 foster-protocol = { path = "../protocol" }
 futures-util.workspace = true
 http.workspace = true
+image.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true

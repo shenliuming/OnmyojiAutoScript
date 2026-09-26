@@ -20,15 +20,15 @@ describe('application routes', () => {
     await screen.findByText('管理凭据缺失，请从本机一键启动器打开控制台')
   })
 
-  it('shows a typed login placeholder at /login/:token', () => {
+  it('shows the customer login page at /login/:token', () => {
     at('/login/customer-token')
-    expect(screen.getByRole('heading', { name: '扫码登录' })).toBeInTheDocument()
-    expect(screen.getByText('客户登录页面将在下一阶段接入。')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '游戏账号登录' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '确认这是我的账号' })).toBeDisabled()
   })
 
-  it('shows a typed service placeholder at /service/:token', () => {
+  it('shows the customer service page at /service/:token', () => {
     at('/service/customer-token')
-    expect(screen.getByRole('heading', { name: '服务控制' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '我的寄养服务' })).toBeInTheDocument()
   })
 
   it('shows not found for unknown paths', () => {

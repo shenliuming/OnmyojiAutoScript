@@ -127,6 +127,29 @@ pub async fn mark_login_qr_expired(
     Ok(())
 }
 
+pub async fn mark_login_platform_selected(
+    pool: &MySqlPool,
+    host_id: i64,
+    session_no: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE login_session ls
+         JOIN emulator_instance e ON e.id = ls.emulator_id
+         SET ls.status = 'DETECTING_LOGIN',
+             ls.qr_payload = NULL,
+             ls.qr_expires_at = NULL
+         WHERE ls.session_no = ?
+           AND e.host_id = ?
+           AND ls.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+    )
+    .bind(session_no)
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn mark_login_identity_detected(
     pool: &MySqlPool,
     host_id: i64,
@@ -143,7 +166,20 @@ pub async fn mark_login_identity_detected(
              ls.detected_masked_account = ?,
              ls.detected_character_name = ?,
              ls.detected_server_name = ?,
-             ls.detected_game_uid = ?
+             ls.detected_game_uid = ?,
+             ls.identity_verified = (
+                 ls.expected_server_name IS NOT NULL
+                 AND BINARY ls.expected_server_name = BINARY ?
+                 AND BINARY ls.expected_character_name = BINARY ?
+                 AND BINARY ls.expected_game_uid = BINARY ?
+             ),
+             ls.identity_verify_reason = CASE
+                 WHEN ls.expected_server_name IS NULL THEN '请先填写区服、角色名和游戏 UID'
+                 WHEN BINARY ls.expected_server_name = BINARY ?
+                   AND BINARY ls.expected_character_name = BINARY ?
+                   AND BINARY ls.expected_game_uid = BINARY ? THEN '已与游戏识别结果核对一致'
+                 ELSE '填写信息与游戏识别结果不一致，请检查后重新提交'
+             END
          WHERE ls.session_no = ?
            AND e.host_id = ?
            AND ls.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
@@ -151,6 +187,12 @@ pub async fn mark_login_identity_detected(
     .bind(masked_account)
     .bind(character_name)
     .bind(server_name)
+    .bind(game_uid)
+    .bind(server_name)
+    .bind(character_name)
+    .bind(game_uid)
+    .bind(server_name)
+    .bind(character_name)
     .bind(game_uid)
     .bind(session_no)
     .bind(host_id)
@@ -200,7 +242,7 @@ pub async fn mark_login_failed(
          WHERE id = ?
            AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
     )
-    .bind(reason)
+    .bind(reason.chars().take(255).collect::<String>())
     .bind(session_id)
     .execute(&mut *tx)
     .await?;
@@ -226,6 +268,7 @@ pub struct LockedLoginSession {
     pub detected_character_name: Option<String>,
     pub detected_server_name: Option<String>,
     pub detected_game_uid: Option<String>,
+    pub identity_verified: bool,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -266,7 +309,8 @@ pub async fn lock_login_session_by_control_hash(
             detected_masked_account,
             detected_character_name,
             detected_server_name,
-            detected_game_uid
+            detected_game_uid,
+            identity_verified
          FROM login_session
          WHERE control_token_hash = ?
          FOR UPDATE",
@@ -274,6 +318,36 @@ pub async fn lock_login_session_by_control_hash(
     .bind(control_token_hash)
     .fetch_optional(&mut **tx)
     .await
+}
+
+pub async fn save_expected_login_identity(
+    tx: &mut Transaction<'_, MySql>,
+    session_id: i64,
+    server_name: &str,
+    character_name: &str,
+    game_uid: &str,
+    verified: bool,
+    reason: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE login_session
+         SET expected_server_name = ?,
+             expected_character_name = ?,
+             expected_game_uid = ?,
+             identity_verified = ?,
+             identity_verify_reason = ?
+         WHERE id = ?",
+    )
+    .bind(server_name)
+    .bind(character_name)
+    .bind(game_uid)
+    .bind(verified)
+    .bind(reason)
+    .bind(session_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
 }
 
 pub async fn lock_binding(
@@ -484,7 +558,7 @@ pub async fn cancel_login_session_row(
          WHERE id = ?
            AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
     )
-    .bind(reason)
+    .bind(reason.chars().take(255).collect::<String>())
     .bind(session_id)
     .execute(&mut **tx)
     .await?;

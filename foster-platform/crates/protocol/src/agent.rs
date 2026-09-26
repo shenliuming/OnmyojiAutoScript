@@ -89,6 +89,12 @@ pub struct LoginQrExpired {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginPlatformSelected {
+    pub session_no: String,
+    pub platform: crate::LoginPlatform,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginIdentityDetected {
     pub session_no: String,
     pub masked_account: Option<String>,
@@ -158,6 +164,7 @@ pub enum AgentEvent {
     LoginPreparing(LoginPreparing),
     LoginQrReady(LoginQrReady),
     LoginQrExpired(LoginQrExpired),
+    LoginPlatformSelected(LoginPlatformSelected),
     LoginIdentityDetected(LoginIdentityDetected),
     LoginFailed(LoginFailed),
     FosterStageChanged(FosterStageChanged),

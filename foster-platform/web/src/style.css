@@ -29,3 +29,15 @@ table { width: 100%; border-collapse: collapse; }
 td, th { text-align: left; padding: 9px; border-bottom: 1px solid #34393e; }
 th { color: #92989e; font-weight: 500; }
 @media (max-width: 640px) { .grid, .formgrid { grid-template-columns: 1fr; } .wide { grid-column: auto; } .page-header { align-items: flex-start; gap: 12px; flex-direction: column; } }
+.customer-page { max-width: 680px; }
+.customer-page > .card { padding: 22px; }
+.login-status { margin: 20px 0; padding: 12px; border: 1px solid #34393e; border-radius: 8px; }
+.qr-panel { display: flex; justify-content: center; margin: 16px 0; }
+.qr-panel img { width: min(100%, 320px); height: auto; image-rendering: crisp-edges; background: #fff; border-radius: 8px; }
+.platform-box { margin-top: 18px; text-align: center; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.platform-box .actions { justify-content: center; }
+.identity-form { margin-top: 18px; padding-top: 16px; border-top: 1px solid #34393e; }
+.identity-form button { margin-top: 16px; }
+.service-page textarea { display: block; width: 100%; min-height: 130px; background: #151719; color: inherit; border: 1px solid #34393e; border-radius: 7px; padding: 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.value { font-size: 19px; margin-top: 4px; }

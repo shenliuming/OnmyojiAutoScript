@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::time::Duration;
 
 use axum::{
@@ -14,6 +15,78 @@ use http_body_util::BodyExt;
 use serde_json::Value;
 use sqlx::MySqlPool;
 use tower::ServiceExt;
+
+#[tokio::test]
+async fn customer_html_paths_are_not_served_by_the_api_router() -> anyhow::Result<()> {
+    let pool = sqlx::mysql::MySqlPoolOptions::new()
+        .connect_lazy("mysql://unused:unused@127.0.0.1:3306/unused")?;
+    let app = build_app(test_state(pool));
+    for path in ["/login/public-token", "/service/public-token"] {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty())?)
+            .await?;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn frontend_page_paths_leave_login_json_qr_and_sse_apis_intact(
+    pool: MySqlPool,
+) -> anyhow::Result<()> {
+    let (_service, session_no, public_token) = seed_fixture(&pool).await?;
+    let mut png = Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(1, 1).write_to(&mut png, image::ImageFormat::Png)?;
+    let encoded =
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png.into_inner());
+    sqlx::query(
+        "UPDATE login_session SET status = 'QR_READY', qr_payload = ?,
+         qr_expires_at = DATE_ADD(NOW(3), INTERVAL 5 MINUTE) WHERE session_no = ?",
+    )
+    .bind(format!("data:image/png;base64,{encoded}"))
+    .bind(session_no)
+    .execute(&pool)
+    .await?;
+
+    let app = build_app(test_state(pool));
+    for path in [
+        format!("/login/{public_token}"),
+        format!("/service/{public_token}"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty())?)
+            .await?;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+    for (path, content_type) in [
+        (
+            format!("/public/login/{public_token}/meta"),
+            "application/json",
+        ),
+        (format!("/public/login/{public_token}/qr"), "image/png"),
+        (
+            format!("/public/login/{public_token}/events"),
+            "text/event-stream",
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty())?)
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .starts_with(content_type)
+        );
+    }
+    Ok(())
+}
 
 async fn seed_fixture(pool: &MySqlPool) -> anyhow::Result<(EnrollmentService, String, String)> {
     let host = sqlx::query(

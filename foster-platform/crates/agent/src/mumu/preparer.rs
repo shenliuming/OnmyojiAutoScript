@@ -1,7 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::emulator::{CommandRunner, SystemCommandRunner, query_installed_packages, uninstall_package, wait_adb_online};
+use crate::emulator::{
+    CommandRunner, SystemCommandRunner, query_installed_packages, uninstall_package,
+    wait_adb_online,
+};
 
 use super::{
     AppMarketInstaller, InstallError, MumuConfig, MumuController, MumuError, MumuInstanceInfo,
@@ -30,7 +33,9 @@ pub enum PrepareError {
         serial: String,
         operation: &'static str,
     },
-    #[error("failed to remove ordinary package {package} on {serial}; its local data is left untouched")]
+    #[error(
+        "failed to remove ordinary package {package} on {serial}; its local data is left untouched"
+    )]
     NormalPackageRemoval { serial: String, package: String },
     #[error("ordinary package {package} is still present on {serial}")]
     NormalPackageStillPresent { serial: String, package: String },
@@ -146,16 +151,13 @@ where
                 );
                 continue;
             };
-            let packages = query_installed_packages(
-                self.runner.as_ref(),
-                &self.adb_program,
-                &serial,
-            )
-            .await
-            .map_err(|_| PrepareError::Adb {
-                serial: serial.clone(),
-                operation: "list installed packages",
-            })?;
+            let packages =
+                query_installed_packages(self.runner.as_ref(), &self.adb_program, &serial)
+                    .await
+                    .map_err(|_| PrepareError::Adb {
+                        serial: serial.clone(),
+                        operation: "list installed packages",
+                    })?;
             if packages.iter().any(|package| *package == normal) {
                 uninstall_package(self.runner.as_ref(), &self.adb_program, &serial, &normal)
                     .await
@@ -166,12 +168,13 @@ where
             }
         }
 
-        let packages = query_installed_packages(self.runner.as_ref(), &self.adb_program, adb_serial)
-            .await
-            .map_err(|_| PrepareError::Adb {
-                serial: adb_serial.to_string(),
-                operation: "list installed packages",
-            })?;
+        let packages =
+            query_installed_packages(self.runner.as_ref(), &self.adb_program, adb_serial)
+                .await
+                .map_err(|_| PrepareError::Adb {
+                    serial: adb_serial.to_string(),
+                    operation: "list installed packages",
+                })?;
         if packages.iter().any(|package| *package == normal) {
             return Err(PrepareError::NormalPackageStillPresent {
                 serial: adb_serial.to_string(),
@@ -182,13 +185,17 @@ where
             self.market.install_full_channel(adb_serial).await?;
         }
 
-        let packages = query_installed_packages(self.runner.as_ref(), &self.adb_program, adb_serial)
-            .await
-            .map_err(|_| PrepareError::Adb {
-                serial: adb_serial.to_string(),
-                operation: "verify installed packages",
-            })?;
-        if packages.iter().any(|package| *package == self.config.normal_package) {
+        let packages =
+            query_installed_packages(self.runner.as_ref(), &self.adb_program, adb_serial)
+                .await
+                .map_err(|_| PrepareError::Adb {
+                    serial: adb_serial.to_string(),
+                    operation: "verify installed packages",
+                })?;
+        if packages
+            .iter()
+            .any(|package| *package == self.config.normal_package)
+        {
             return Err(PrepareError::NormalPackageStillPresent {
                 serial: adb_serial.to_string(),
                 package: self.config.normal_package.clone(),
@@ -231,8 +238,10 @@ fn serial_of(instance: &MumuInstanceInfo) -> Option<String> {
 mod tests {
     use super::*;
     use crate::emulator::CommandOutput;
-    use crate::mumu::app_market::{FULL_CHANNEL_LABEL, GAME_NAME, INSTALL_LABEL};
     use crate::mumu::MarketUi;
+    use crate::mumu::app_market::{
+        FULL_CHANNEL_LABEL, GAME_NAME, GAME_SEARCH_QUERY, INSTALL_LABEL,
+    };
     use async_trait::async_trait;
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
@@ -306,7 +315,10 @@ mod tests {
         }
 
         async fn apply_resolution(&self, index: u32) -> Result<(), MumuError> {
-            self.calls.lock().unwrap().push(format!("resolution:{index}"));
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("resolution:{index}"));
             Ok(())
         }
     }
@@ -337,6 +349,19 @@ mod tests {
             program: &str,
             args: &[String],
         ) -> Result<crate::emulator::CommandOutput, crate::emulator::EmulatorDriverError> {
+            // The production path idempotently reconnects every network ADB
+            // serial before shell access.  Keep the fixture focused on the
+            // scripted package operations after the initial readiness check.
+            if args.first().map(String::as_str) == Some("connect")
+                && self
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|call| call.starts_with("adb connect "))
+            {
+                return Ok(ok("connected\n"));
+            }
             self.calls
                 .lock()
                 .unwrap()
@@ -407,6 +432,11 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(format!("has_text:{serial}:{text}"));
+            // This fixture models the explicit channel-picker path.  The
+            // title-marker path is covered by app_market tests separately.
+            if text == "全渠道扫码" {
+                return Ok(false);
+            }
             Ok(!(self.fail_full_channel && text == FULL_CHANNEL_LABEL))
         }
 
@@ -418,7 +448,11 @@ mod tests {
             Ok(())
         }
 
-        async fn package_installed(&self, serial: &str, package: &str) -> Result<bool, InstallError> {
+        async fn package_installed(
+            &self,
+            serial: &str,
+            package: &str,
+        ) -> Result<bool, InstallError> {
             self.calls
                 .lock()
                 .unwrap()
@@ -455,13 +489,13 @@ mod tests {
         ]));
         let runner = FakeRunner::with_outputs(vec![
             ok("connected to 127.0.0.1:16384\n"), // adb connect
-            ok("device\n"),                          // wait adb online
-            packages(&[NORMAL]),                     // instance 0 packages
-            ok("Success\n"),                         // uninstall instance 0
-            packages(&[NORMAL]),                     // instance 1 packages
-            ok("Success\n"),                         // uninstall instance 1
-            packages(&[]),                           // decide: nothing installed
-            packages(&[FULL]),                       // verify after install
+            ok("device\n"),                       // wait adb online
+            packages(&[NORMAL]),                  // instance 0 packages
+            ok("Success\n"),                      // uninstall instance 0
+            packages(&[NORMAL]),                  // instance 1 packages
+            ok("Success\n"),                      // uninstall instance 1
+            packages(&[]),                        // decide: nothing installed
+            packages(&[FULL]),                    // verify after install
         ]);
         let market = Arc::new(FakeMarketUi {
             report_installed_package: Some(FULL.into()),
@@ -499,8 +533,9 @@ mod tests {
             market.calls(),
             vec![
                 format!("launch:{SERIAL}"),
-                format!("search:{SERIAL}:{GAME_NAME}"),
+                format!("search:{SERIAL}:{GAME_SEARCH_QUERY}"),
                 format!("tap:{SERIAL}:{GAME_NAME}"),
+                format!("has_text:{SERIAL}:全渠道扫码"),
                 format!("has_text:{SERIAL}:{FULL_CHANNEL_LABEL}"),
                 format!("tap:{SERIAL}:{FULL_CHANNEL_LABEL}"),
                 format!("tap:{SERIAL}:{INSTALL_LABEL}"),
@@ -518,8 +553,8 @@ mod tests {
         let runner = FakeRunner::with_outputs(vec![
             ok("connected to 127.0.0.1:16384\n"), // adb connect
             ok("device\n"),
-            packages(&[]),   // instance 0 clean
-            packages(&[]),   // instance 1 clean
+            packages(&[]),     // instance 0 clean
+            packages(&[]),     // instance 1 clean
             packages(&[FULL]), // decide: already installed
             packages(&[FULL]), // verify
         ]);
@@ -584,9 +619,9 @@ mod tests {
         let runner = FakeRunner::with_outputs(vec![
             ok("connected to 127.0.0.1:16384\n"), // adb connect
             ok("device\n"),
-            packages(&[]),                    // instance clean
-            packages(&[]),                    // decide: no full-channel yet
-            packages(&["com.other.wrong"]),   // verify: a wrong package, not full-channel
+            packages(&[]),                  // instance clean
+            packages(&[]),                  // decide: no full-channel yet
+            packages(&["com.other.wrong"]), // verify: a wrong package, not full-channel
         ]);
         let market = Arc::new(FakeMarketUi {
             report_installed_package: Some(FULL.into()),
@@ -640,17 +675,23 @@ mod tests {
             packages(&[FULL]), // verify
         ]);
 
-        let prepared = preparer(controller.clone(), runner, Arc::new(FakeMarketUi::default()))
-            .prepare(SERIAL, "oas-02")
-            .await
-            .unwrap();
+        let prepared = preparer(
+            controller.clone(),
+            runner,
+            Arc::new(FakeMarketUi::default()),
+        )
+        .prepare(SERIAL, "oas-02")
+        .await
+        .unwrap();
 
         assert_eq!(prepared.mumu_index, 2);
         let calls = controller.calls();
         assert!(calls.contains(&"launch:2".to_string()));
         assert!(calls.contains(&"resolution:2".to_string()));
-        assert!(calls.iter().position(|call| call == "launch:2")
-            < calls.iter().position(|call| call == "resolution:2"));
+        assert!(
+            calls.iter().position(|call| call == "launch:2")
+                < calls.iter().position(|call| call == "resolution:2")
+        );
     }
 
     #[tokio::test]

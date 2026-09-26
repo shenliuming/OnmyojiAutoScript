@@ -293,7 +293,7 @@ curl -X POST http://SERVER:8080/admin/onboard \
     "customerId": 10001,
     "planCode": "BASIC_AUTO_FOSTER",
     "serviceDays": 30,
-    "loginTtlMinutes": 15
+    "loginTtlMinutes": 30
   }'
 ```
 

@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use foster_agent::{
     command_journal::CommandJournal,
     config::AgentConfig,
-    emulator::{GenericAdbEmulatorDriver, SystemCommandRunner},
+    emulator::{EmulatorDriver, GenericAdbEmulatorDriver, SystemCommandRunner},
     foster::HttpOasFosterExecutor,
     login::HttpOasLoginExecutor,
     mumu::{AdbMarketUi, AppMarketInstaller, MumuCli, MumuConfig, MumuLoginPreparer},
@@ -76,6 +76,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         adb_program.clone(),
     )
     .shared();
+
+    let mut startup_instances = driver.list_instances().await?;
+    startup_instances.sort_by(|left, right| left.emulator_code.cmp(&right.emulator_code));
+    for instance in startup_instances {
+        let serial = instance
+            .adb_serial
+            .ok_or_else(|| format!("MuMu instance {} has no ADB serial", instance.emulator_code))?;
+        let config = driver.instance_config(&instance.emulator_code)?;
+        tracing::info!(
+            emulator_code = %instance.emulator_code,
+            serial = %serial,
+            "preparing MuMu full-channel package before Agent startup"
+        );
+        preparer
+            .prepare(&serial, &config.oas_config_name)
+            .await
+            .map_err(|error| {
+                format!(
+                    "startup preparation failed for {}: {error}",
+                    instance.emulator_code
+                )
+            })?;
+    }
 
     tracing::info!(
         oas_base_url = %oas_base_url,

@@ -22,7 +22,12 @@ pub struct AdminOnboardRequest {
     pub customer_id: i64,
     pub plan_code: String,
     pub service_days: i32,
+    #[serde(default = "default_login_ttl_minutes")]
     pub login_ttl_minutes: i32,
+}
+
+fn default_login_ttl_minutes() -> i32 {
+    30
 }
 
 pub async fn admin_onboard(
@@ -77,6 +82,7 @@ fn status_code(error: OnboardingError) -> StatusCode {
         OnboardingError::Enrollment(error) => match error {
             crate::enrollment::EnrollmentError::LoginSessionNotFound => StatusCode::NOT_FOUND,
             crate::enrollment::EnrollmentError::LoginSessionExpired => StatusCode::GONE,
+            crate::enrollment::EnrollmentError::InvalidIdentityInput => StatusCode::BAD_REQUEST,
             crate::enrollment::EnrollmentError::InvalidLoginState
             | crate::enrollment::EnrollmentError::IdentityRejected
             | crate::enrollment::EnrollmentError::BindingMismatch

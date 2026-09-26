@@ -2,12 +2,18 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::emulator::CommandRunner;
+use crate::emulator::{CommandRunner, ensure_adb_connected};
 
 pub const GAME_NAME: &str = "阴阳师";
+/// MuMu's `adb shell input text` cannot reliably inject Chinese on Android 15.
+/// The store indexes the game under this ASCII alias and returns the full
+/// channel QR-code build as the first result.
+pub const GAME_SEARCH_QUERY: &str = "yys";
+const FULL_CHANNEL_MARKER: &str = "全渠道扫码";
 pub const FULL_CHANNEL_LABEL: &str = "全渠道";
 pub const INSTALL_LABEL: &str = "安装";
-const SEARCH_LABEL: &str = "搜索";
+const DOWNLOAD_LABEL: &str = "下载";
+const CONTINUE_DOWNLOAD_LABEL: &str = "继续下载";
 const DUMP_PATH: &str = "/sdcard/foster_market.xml";
 
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +42,7 @@ pub enum InstallError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MarketNode {
     pub text: String,
+    pub resource_id: String,
     pub center: (u32, u32),
 }
 
@@ -44,6 +51,9 @@ pub struct MarketNode {
 #[async_trait]
 pub trait MarketUi: Send + Sync + 'static {
     async fn launch(&self, serial: &str) -> Result<(), InstallError>;
+    async fn focus_search(&self, _serial: &str) -> Result<(), InstallError> {
+        Ok(())
+    }
     async fn search(&self, serial: &str, query: &str) -> Result<(), InstallError>;
     async fn has_text(&self, serial: &str, text: &str) -> Result<bool, InstallError>;
     async fn tap_text(&self, serial: &str, text: &str) -> Result<(), InstallError>;
@@ -74,34 +84,52 @@ impl AppMarketInstaller {
 
     pub async fn install_full_channel(&self, serial: &str) -> Result<(), InstallError> {
         self.ui.launch(serial).await?;
-        self.ui.search(serial, GAME_NAME).await?;
+        self.ui.search(serial, GAME_SEARCH_QUERY).await?;
         self.ui
             .tap_text(serial, GAME_NAME)
             .await
             .map_err(|error| match error {
-                InstallError::TextMissing { serial, .. } => {
-                    InstallError::GameEntryMissing { serial, game: GAME_NAME.into() }
-                }
+                InstallError::TextMissing { serial, .. } => InstallError::GameEntryMissing {
+                    serial,
+                    game: GAME_NAME.into(),
+                },
                 other => other,
             })?;
 
-        if !self.ui.has_text(serial, FULL_CHANNEL_LABEL).await? {
+        if self.ui.has_text(serial, FULL_CHANNEL_MARKER).await? {
+            // Current MuMu 12 store builds expose this game as one result
+            // whose title explicitly says it supports full-channel QR login.
+            // Its channel selector contains only “网易”, and tapping that
+            // selector would install the wrong ordinary package.  In this UI
+            // the result's detail-page “网易 下载” button installs the
+            // full-channel package identified below, so use it only after
+            // checking the marker and verify the package after installation.
+            self.ui
+                .tap_text(serial, DOWNLOAD_LABEL)
+                .await
+                .map_err(|error| match error {
+                    InstallError::TextMissing { serial, .. } => {
+                        InstallError::InstallButtonMissing { serial }
+                    }
+                    other => other,
+                })?;
+        } else if self.ui.has_text(serial, FULL_CHANNEL_LABEL).await? {
+            self.ui.tap_text(serial, FULL_CHANNEL_LABEL).await?;
+            self.ui
+                .tap_text(serial, INSTALL_LABEL)
+                .await
+                .map_err(|error| match error {
+                    InstallError::TextMissing { serial, .. } => {
+                        InstallError::InstallButtonMissing { serial }
+                    }
+                    other => other,
+                })?;
+        } else {
             return Err(InstallError::FullChannelOptionMissing {
                 serial: serial.to_string(),
                 game: GAME_NAME.into(),
             });
         }
-        self.ui.tap_text(serial, FULL_CHANNEL_LABEL).await?;
-
-        self.ui
-            .tap_text(serial, INSTALL_LABEL)
-            .await
-            .map_err(|error| match error {
-                InstallError::TextMissing { serial, .. } => InstallError::InstallButtonMissing {
-                    serial,
-                },
-                other => other,
-            })?;
 
         let deadline = tokio::time::Instant::now() + self.timeout;
         loop {
@@ -112,6 +140,11 @@ impl AppMarketInstaller {
             {
                 return Ok(());
             }
+            // MuMu's store can pause a large APK download without surfacing
+            // an error.  Keep the preparation self-healing by resuming the
+            // same detail-page action when the button is present; a missing
+            // button simply means the download is still progressing.
+            let _ = self.ui.tap_text(serial, CONTINUE_DOWNLOAD_LABEL).await;
             if tokio::time::Instant::now() >= deadline {
                 return Err(InstallError::InstallTimeout {
                     serial: serial.to_string(),
@@ -131,7 +164,11 @@ pub struct AdbMarketUi<R: CommandRunner> {
 }
 
 impl<R: CommandRunner> AdbMarketUi<R> {
-    pub fn new(runner: R, adb_program: impl Into<String>, market_activity: impl Into<String>) -> Self {
+    pub fn new(
+        runner: R,
+        adb_program: impl Into<String>,
+        market_activity: impl Into<String>,
+    ) -> Self {
         Self {
             runner,
             adb_program: adb_program.into(),
@@ -145,6 +182,7 @@ impl<R: CommandRunner> AdbMarketUi<R> {
         operation: &'static str,
         shell_args: &[&str],
     ) -> Result<Vec<u8>, InstallError> {
+        ensure_adb_connected(&self.runner, &self.adb_program, serial).await;
         let mut args = vec!["-s".to_string(), serial.to_string(), "shell".to_string()];
         args.extend(shell_args.iter().map(|arg| arg.to_string()));
         let output = self
@@ -155,7 +193,9 @@ impl<R: CommandRunner> AdbMarketUi<R> {
                 serial: serial.to_string(),
                 operation,
             })?;
-        if !output.success {
+        let dump_succeeded_with_quirky_exit = operation == "uiautomator dump"
+            && String::from_utf8_lossy(&output.stdout).contains("UI hierchary dumped to:");
+        if !output.success && !dump_succeeded_with_quirky_exit {
             return Err(InstallError::Adb {
                 serial: serial.to_string(),
                 operation,
@@ -165,8 +205,12 @@ impl<R: CommandRunner> AdbMarketUi<R> {
     }
 
     async fn dump_nodes(&self, serial: &str) -> Result<Vec<MarketNode>, InstallError> {
-        self.run_shell(serial, "uiautomator dump", &["uiautomator", "dump", DUMP_PATH])
-            .await?;
+        self.run_shell(
+            serial,
+            "uiautomator dump",
+            &["uiautomator", "dump", DUMP_PATH],
+        )
+        .await?;
         let xml = self
             .run_shell(serial, "cat ui dump", &["cat", DUMP_PATH])
             .await?;
@@ -183,18 +227,69 @@ impl<R: CommandRunner> MarketUi for AdbMarketUi<R> {
             &["am", "start", "-W", "-n", &self.market_activity],
         )
         .await?;
+        let mut nodes = None;
+        let mut last_error = None;
+        for _ in 0..20 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            match self.dump_nodes(serial).await {
+                Ok(value) => {
+                    nodes = Some(value);
+                    break;
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+        let nodes = nodes.ok_or_else(|| {
+            last_error.unwrap_or_else(|| InstallError::Adb {
+                serial: serial.to_string(),
+                operation: "uiautomator dump",
+            })
+        })?;
+        if nodes.iter().any(|node| {
+            node.text
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect::<String>()
+                == "跳过"
+        }) {
+            self.tap_text(serial, "跳").await?;
+        }
+        Ok(())
+    }
+
+    async fn focus_search(&self, serial: &str) -> Result<(), InstallError> {
+        let node = self
+            .dump_nodes(serial)
+            .await?
+            .into_iter()
+            .find(|node| node.resource_id == "com.mumu.store:id/search_bar")
+            .ok_or_else(|| InstallError::SearchBoxMissing {
+                serial: serial.to_string(),
+            })?;
+        self.run_shell(
+            serial,
+            "input tap search field",
+            &[
+                "input",
+                "tap",
+                &node.center.0.to_string(),
+                &node.center.1.to_string(),
+            ],
+        )
+        .await?;
         Ok(())
     }
 
     async fn search(&self, serial: &str, query: &str) -> Result<(), InstallError> {
-        MarketUi::tap_text(self, serial, SEARCH_LABEL)
-            .await
-            .map_err(|error| match error {
-                InstallError::TextMissing { serial, .. } => {
-                    InstallError::SearchBoxMissing { serial }
-                }
-                other => other,
-            })?;
+        self.focus_search(serial).await?;
+        // MuMu keeps the previous query in the search field.  Android's
+        // `input text` cannot replace it, and the clear icon has no text node
+        // in the UI dump, so clear a bounded number of characters through the
+        // focused field before entering the ASCII alias.
+        let mut clear_args = vec!["input", "keyevent"];
+        clear_args.extend(std::iter::repeat("67").take(64));
+        self.run_shell(serial, "clear app market search text", &clear_args)
+            .await?;
         self.run_shell(serial, "input search text", &["input", "text", query])
             .await?;
         self.run_shell(serial, "input search enter", &["input", "keyevent", "66"])
@@ -256,11 +351,13 @@ pub fn parse_ui_dump(xml: &str) -> Vec<MarketNode> {
         };
         let tag = &xml[start..start + end];
         if let (Some(text), Some(bounds)) = (attribute(tag, "text"), attribute(tag, "bounds")) {
-            if !text.is_empty()
+            let resource_id = attribute(tag, "resource-id").unwrap_or_default();
+            if (!text.is_empty() || resource_id == "com.mumu.store:id/search_bar")
                 && let Some((x1, y1, x2, y2)) = parse_bounds(&bounds)
             {
                 nodes.push(MarketNode {
                     text,
+                    resource_id,
                     center: ((x1 + x2) / 2, (y1 + y2) / 2),
                 });
             }
@@ -298,11 +395,11 @@ pub fn parse_bounds(value: &str) -> Option<(u32, u32, u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emulator::{CommandOutput, EmulatorDriverError};
     use std::{
         collections::VecDeque,
         sync::{Arc, Mutex as StdMutex},
     };
-    use crate::emulator::{CommandOutput, EmulatorDriverError};
 
     const FULL: &str = "com.netease.onmyoji.wyzymnqsd_cps";
     const SERIAL: &str = "127.0.0.1:16416";
@@ -369,13 +466,20 @@ mod tests {
 
         async fn has_text(&self, serial: &str, text: &str) -> Result<bool, InstallError> {
             self.log.push(format!("has_text:{serial}:{text}"));
-            Ok(self.current_texts().iter().any(|value| value.contains(text)))
+            Ok(self
+                .current_texts()
+                .iter()
+                .any(|value| value.contains(text)))
         }
 
         async fn tap_text(&self, serial: &str, text: &str) -> Result<(), InstallError> {
             self.log.push(format!("tap:{serial}:{text}"));
-            if self.current_texts().iter().any(|value| value.contains(text)) {
-                if text == INSTALL_LABEL && !self.never_installs {
+            if self
+                .current_texts()
+                .iter()
+                .any(|value| value.contains(text))
+            {
+                if (text == INSTALL_LABEL || text == DOWNLOAD_LABEL) && !self.never_installs {
                     *self.installed.lock().unwrap() = true;
                 }
                 self.advance();
@@ -393,7 +497,8 @@ mod tests {
             serial: &str,
             package: &str,
         ) -> Result<bool, InstallError> {
-            self.log.push(format!("package_installed:{serial}:{package}"));
+            self.log
+                .push(format!("package_installed:{serial}:{package}"));
             Ok(*self.installed.lock().unwrap() && package == FULL)
         }
     }
@@ -420,14 +525,18 @@ mod tests {
             ],
         ));
 
-        installer(market.clone()).install_full_channel(SERIAL).await.unwrap();
+        installer(market.clone())
+            .install_full_channel(SERIAL)
+            .await
+            .unwrap();
 
         assert_eq!(
             log.snapshot(),
             vec![
                 format!("launch:{SERIAL}"),
-                format!("search:{SERIAL}:{GAME_NAME}"),
+                format!("search:{SERIAL}:{GAME_SEARCH_QUERY}"),
                 format!("tap:{SERIAL}:{GAME_NAME}"),
+                format!("has_text:{SERIAL}:全渠道扫码"),
                 format!("has_text:{SERIAL}:{FULL_CHANNEL_LABEL}"),
                 format!("tap:{SERIAL}:{FULL_CHANNEL_LABEL}"),
                 format!("tap:{SERIAL}:{INSTALL_LABEL}"),
@@ -442,20 +551,52 @@ mod tests {
         let log = CallLog::default();
         let market = Arc::new(FakeMarket::new(
             log.clone(),
-            vec![
-                vec!["阴阳师"],
-                vec!["阴阳师", "官服", "安装"],
-                vec![],
-            ],
+            vec![vec!["阴阳师"], vec!["阴阳师", "官服", "安装"], vec![]],
         ));
 
-        let error = installer(market).install_full_channel(SERIAL).await.unwrap_err();
+        let error = installer(market)
+            .install_full_channel(SERIAL)
+            .await
+            .unwrap_err();
 
         assert!(matches!(
             error,
             InstallError::FullChannelOptionMissing { ref serial, .. } if serial == SERIAL
         ));
-        assert!(!log.snapshot().contains(&format!("tap:{SERIAL}:{INSTALL_LABEL}")));
+        assert!(
+            !log.snapshot()
+                .contains(&format!("tap:{SERIAL}:{INSTALL_LABEL}"))
+        );
+    }
+
+    #[tokio::test]
+    async fn current_mumu_result_uses_full_channel_title_marker() {
+        let log = CallLog::default();
+        let market = Arc::new(FakeMarket::new(
+            log.clone(),
+            vec![
+                vec!["阴阳师（支持官服安卓/iOS账密+全渠道扫码）"],
+                vec!["阴阳师（支持官服安卓/iOS账密+全渠道扫码）", "网易 下载"],
+                vec![],
+            ],
+        ));
+
+        installer(market)
+            .install_full_channel(SERIAL)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            log.snapshot(),
+            vec![
+                format!("launch:{SERIAL}"),
+                format!("search:{SERIAL}:{GAME_SEARCH_QUERY}"),
+                format!("tap:{SERIAL}:{GAME_NAME}"),
+                format!("has_text:{SERIAL}:全渠道扫码"),
+                format!("tap:{SERIAL}:下载"),
+                format!("package_installed:{SERIAL}:{FULL}"),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -463,7 +604,10 @@ mod tests {
         let log = CallLog::default();
         let market = Arc::new(FakeMarket::new(log, vec![vec!["王者荣耀", "安装"], vec![]]));
 
-        let error = installer(market).install_full_channel(SERIAL).await.unwrap_err();
+        let error = installer(market)
+            .install_full_channel(SERIAL)
+            .await
+            .unwrap_err();
 
         assert!(matches!(error, InstallError::GameEntryMissing { .. }));
     }
@@ -500,8 +644,16 @@ mod tests {
         assert_eq!(
             nodes,
             vec![
-                MarketNode { text: "阴阳师".into(), center: (200, 230) },
-                MarketNode { text: "全渠道".into(), center: (60, 60) },
+                MarketNode {
+                    text: "阴阳师".into(),
+                    resource_id: String::new(),
+                    center: (200, 230)
+                },
+                MarketNode {
+                    text: "全渠道".into(),
+                    resource_id: String::new(),
+                    center: (60, 60)
+                },
             ]
         );
     }
@@ -550,21 +702,38 @@ mod tests {
 
     #[tokio::test]
     async fn adb_market_ui_taps_derived_centers_and_checks_exact_package() {
-        let dump_xml = r#"<?xml version="1.0"?><hierarchy><node text="搜索" bounds="[600,40][680,90]"/><node text="阴阳师" bounds="[100,300][500,360]"/></hierarchy>"#;
+        let dump_xml = r#"<?xml version="1.0"?><hierarchy><node text="搜 索" resource-id="com.mumu.store:id/search_bar" bounds="[600,40][680,90]"/><node text="阴阳师" bounds="[100,300][500,360]"/></hierarchy>"#;
         let runner = RecordingRunner {
             outputs: Arc::new(StdMutex::new(
                 [
-                    ok(""),                     // am start
-                    ok(""),                     // uiautomator dump (search box)
-                    ok(dump_xml),               // cat dump (search box)
-                    ok(""),                     // input tap (search box center)
-                    ok(""),                     // input text
-                    ok(""),                     // input keyevent
-                    ok(""),                     // uiautomator dump (results)
-                    ok(dump_xml),               // cat dump (results)
-                    ok(""),                     // input tap game entry center
-                    ok(&format!("package:{FULL}\npackage:com.other")), // pm list (full-channel)
-                    ok(&format!("package:com.other")), // pm list (ordinary package)
+                    ok("connected"), // connect before am start
+                    ok(""),          // am start
+                    ok("connected"), // connect before startup overlay dump
+                    ok(""),          // uiautomator dump (startup overlay)
+                    ok("connected"), // connect before startup overlay dump cat
+                    ok(dump_xml),    // cat dump (startup overlay)
+                    ok("connected"), // connect before search dump
+                    ok(""),          // uiautomator dump (search box)
+                    ok("connected"), // connect before search dump cat
+                    ok(dump_xml),    // cat dump (search box)
+                    ok("connected"), // connect before search tap
+                    ok(""),          // input tap (search box center)
+                    ok("connected"), // connect before clearing search text
+                    ok(""),          // clear previous search text
+                    ok("connected"), // connect before input text
+                    ok(""),          // input text
+                    ok("connected"), // connect before input enter
+                    ok(""),          // input keyevent
+                    ok("connected"), // connect before results dump
+                    ok(""),          // uiautomator dump (results)
+                    ok("connected"), // connect before results dump cat
+                    ok(dump_xml),    // cat dump (results)
+                    ok("connected"), // connect before game tap
+                    ok(""),          // input tap game entry center
+                    ok("connected"), // connect before full package check
+                    ok(&format!("package:{FULL}\npackage:com.other")),
+                    ok("connected"), // connect before ordinary package check
+                    ok(&format!("package:com.other")),
                 ]
                 .into(),
             )),
@@ -574,22 +743,35 @@ mod tests {
         let ui = AdbMarketUi::new(runner.clone(), "adb", "com.mumu.store/.MainActivity");
 
         ui.launch(SERIAL).await.unwrap();
-        ui.search(SERIAL, GAME_NAME).await.unwrap();
+        ui.search(SERIAL, GAME_SEARCH_QUERY).await.unwrap();
         ui.tap_text(SERIAL, GAME_NAME).await.unwrap();
         assert!(ui.package_installed(SERIAL, FULL).await.unwrap());
-        assert!(!ui.package_installed(SERIAL, "com.netease.onmyoji").await.unwrap());
+        assert!(
+            !ui.package_installed(SERIAL, "com.netease.onmyoji")
+                .await
+                .unwrap()
+        );
 
         let calls = runner.calls.lock().unwrap().clone();
         assert_eq!(
-            calls[0],
+            calls[1],
             format!("adb -s {SERIAL} shell am start -W -n com.mumu.store/.MainActivity")
         );
         // Search-box tap must use the node's own center, not a fixed coordinate.
-        assert_eq!(calls[3], format!("adb -s {SERIAL} shell input tap 640 65"));
-        assert_eq!(calls[4], format!("adb -s {SERIAL} shell input text {GAME_NAME}"));
-        assert_eq!(calls[5], format!("adb -s {SERIAL} shell input keyevent 66"));
-        assert_eq!(calls[8], format!("adb -s {SERIAL} shell input tap 300 330"));
-        assert_eq!(calls[9], format!("adb -s {SERIAL} shell pm list packages"));
-        assert_eq!(calls[10], format!("adb -s {SERIAL} shell pm list packages"));
+        assert_eq!(calls[11], format!("adb -s {SERIAL} shell input tap 640 65"));
+        assert_eq!(
+            calls[15],
+            format!("adb -s {SERIAL} shell input text {GAME_SEARCH_QUERY}")
+        );
+        assert_eq!(
+            calls[17],
+            format!("adb -s {SERIAL} shell input keyevent 66")
+        );
+        assert_eq!(
+            calls[23],
+            format!("adb -s {SERIAL} shell input tap 300 330")
+        );
+        assert_eq!(calls[25], format!("adb -s {SERIAL} shell pm list packages"));
+        assert_eq!(calls[27], format!("adb -s {SERIAL} shell pm list packages"));
     }
 }

@@ -6,7 +6,9 @@ use foster_domain::{
     AccountIdentity, DetectedIdentity, IdentityDecision, IdentityType, normalize_identity,
     verify_identity,
 };
-use foster_protocol::{AgentEvent, ServerCommand, StartLoginCommand};
+use foster_protocol::{
+    AgentEvent, LoginPlatform, SelectLoginPlatformCommand, ServerCommand, StartLoginCommand,
+};
 use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
@@ -25,9 +27,10 @@ use super::{
         find_expired_login_session_ids, insert_enrollment_identity, insert_login_session,
         load_trusted_identities, lock_binding, lock_game_account, lock_login_dispatch_target,
         lock_login_session_by_control_hash, lock_login_session_by_id, mark_login_failed,
-        mark_login_identity_detected, mark_login_preparing, mark_login_preparing_after_dispatch,
-        mark_login_qr_expired, mark_login_qr_ready, mark_login_waiting_emulator,
-        release_pending_binding, release_pending_binding_tx,
+        mark_login_identity_detected, mark_login_platform_selected, mark_login_preparing,
+        mark_login_preparing_after_dispatch, mark_login_qr_expired, mark_login_qr_ready,
+        mark_login_waiting_emulator, release_pending_binding, release_pending_binding_tx,
+        save_expected_login_identity,
     },
 };
 
@@ -47,6 +50,8 @@ pub enum EnrollmentError {
     InvalidLoginState,
     #[error("detected account identity is not sufficiently verified")]
     IdentityRejected,
+    #[error("submitted login identity is invalid")]
+    InvalidIdentityInput,
     #[error("login session binding does not match")]
     BindingMismatch,
     #[error("game account is already active on another emulator")]
@@ -58,6 +63,13 @@ pub enum DispatchLoginResult {
     Dispatched,
     WaitingEmulator,
     AlreadyDispatched,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoginIdentityVerification {
+    pub verified: bool,
+    pub waiting_for_detection: bool,
+    pub message: &'static str,
 }
 
 #[derive(Clone)]
@@ -95,6 +107,9 @@ impl EnrollmentService {
             }
             AgentEvent::LoginQrExpired(event) => {
                 mark_login_qr_expired(&self.pool, host_id, &event.session_no).await?;
+            }
+            AgentEvent::LoginPlatformSelected(event) => {
+                mark_login_platform_selected(&self.pool, host_id, &event.session_no).await?;
             }
             AgentEvent::LoginIdentityDetected(event) => {
                 mark_login_identity_detected(
@@ -192,6 +207,50 @@ impl EnrollmentService {
         }
     }
 
+    pub async fn select_login_platform(
+        &self,
+        control_token: &str,
+        platform: LoginPlatform,
+        registry: &AgentRegistry,
+    ) -> Result<String, EnrollmentError> {
+        let control_token_hash = sha256_hex(control_token);
+        let mut tx = self.pool.begin().await?;
+        let session = lock_login_session_by_control_hash(&mut tx, &control_token_hash)
+            .await?
+            .ok_or(EnrollmentError::LoginSessionNotFound)?;
+
+        if session.expires_at <= Utc::now().naive_utc() {
+            return Err(EnrollmentError::LoginSessionExpired);
+        }
+        if !matches!(
+            session.status.as_str(),
+            "QR_READY" | "WAITING_SCAN" | "DETECTING_LOGIN"
+        ) {
+            return Err(EnrollmentError::InvalidLoginState);
+        }
+
+        let (host_id, emulator_code): (i64, String) =
+            sqlx::query_as("SELECT host_id, emulator_code FROM emulator_instance WHERE id = ?")
+                .bind(session.emulator_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        tx.commit().await?;
+
+        registry
+            .send_command(
+                host_id,
+                ServerCommand::SelectLoginPlatform(SelectLoginPlatformCommand {
+                    session_no: session.session_no.clone(),
+                    emulator_code,
+                    platform,
+                }),
+            )
+            .await
+            .map_err(|_| EnrollmentError::InvalidLoginState)?;
+
+        Ok(session.session_no)
+    }
+
     pub async fn expire_login_sessions(&self) -> Result<usize, EnrollmentError> {
         let session_ids = find_expired_login_session_ids(&self.pool).await?;
         let mut expired = 0_usize;
@@ -272,6 +331,9 @@ impl EnrollmentService {
         if session.status != "VERIFYING_ACCOUNT" {
             return Err(EnrollmentError::InvalidLoginState);
         }
+        if !session.identity_verified {
+            return Err(EnrollmentError::IdentityRejected);
+        }
 
         let binding = lock_binding(&mut tx, session.binding_id)
             .await?
@@ -348,6 +410,77 @@ impl EnrollmentService {
 
         tx.commit().await?;
         Ok(session.session_no)
+    }
+
+    pub async fn submit_login_identity(
+        &self,
+        control_token: &str,
+        server_name: &str,
+        character_name: &str,
+        game_uid: &str,
+    ) -> Result<LoginIdentityVerification, EnrollmentError> {
+        let server_name = server_name.trim();
+        let character_name = character_name.trim();
+        let game_uid = game_uid.trim();
+        if server_name.is_empty()
+            || character_name.is_empty()
+            || game_uid.is_empty()
+            || server_name.chars().count() > 64
+            || character_name.chars().count() > 64
+            || game_uid.chars().count() > 64
+        {
+            return Err(EnrollmentError::InvalidIdentityInput);
+        }
+
+        let control_token_hash = sha256_hex(control_token);
+        let mut tx = self.pool.begin().await?;
+        let session = lock_login_session_by_control_hash(&mut tx, &control_token_hash)
+            .await?
+            .ok_or(EnrollmentError::LoginSessionNotFound)?;
+        if session.expires_at <= Utc::now().naive_utc() {
+            return Err(EnrollmentError::LoginSessionExpired);
+        }
+        if !matches!(
+            session.status.as_str(),
+            "DETECTING_LOGIN" | "VERIFYING_ACCOUNT"
+        ) {
+            return Err(EnrollmentError::InvalidLoginState);
+        }
+
+        let detected = [
+            session.detected_server_name.as_deref(),
+            session.detected_character_name.as_deref(),
+            session.detected_game_uid.as_deref(),
+        ];
+        let waiting_for_detection = detected.iter().any(Option::is_none);
+        let verified = !waiting_for_detection
+            && session.detected_server_name.as_deref() == Some(server_name)
+            && session.detected_character_name.as_deref() == Some(character_name)
+            && session.detected_game_uid.as_deref() == Some(game_uid);
+        let message = if waiting_for_detection {
+            "信息已保存，等待游戏识别结果"
+        } else if verified {
+            "已与游戏识别结果核对一致"
+        } else {
+            "填写信息与游戏识别结果不一致，请检查后重新提交"
+        };
+        save_expected_login_identity(
+            &mut tx,
+            session.id,
+            server_name,
+            character_name,
+            game_uid,
+            verified,
+            message,
+        )
+        .await?;
+        tx.commit().await?;
+
+        Ok(LoginIdentityVerification {
+            verified,
+            waiting_for_detection,
+            message,
+        })
     }
 
     pub async fn create_login_session(

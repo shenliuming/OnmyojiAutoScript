@@ -12,14 +12,17 @@ use crate::{
     agent_gateway::{handler::ws_handler, registry::AgentRegistry},
     config::AgentGatewayConfig,
     enrollment::{
-        public_api::{confirm_login, get_public_login},
+        public_api::{
+            confirm_login, get_public_login, get_public_login_meta, get_public_login_qr,
+            select_login_platform, submit_login_identity,
+        },
         sse::login_status_events,
     },
     foster_dispatch::FosterDispatchService,
     host_admin::{
         admin_list_host_emulators, admin_list_hosts, admin_set_emulator_capacity, admin_upsert_host,
     },
-    onboarding::{AdminAuthConfig, admin_onboard, login_page, service_page},
+    onboarding::{AdminAuthConfig, admin_onboard, admin_page},
     public_portal::{clear_pause, get_service_status, pause_service, replace_quiet_periods},
     recovery::{admin_list_recovery_jobs, admin_resolve_recovery_job},
     resource_admin::{
@@ -50,6 +53,7 @@ pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) 
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/agent/ws", get(ws_handler))
+        .route("/admin", get(admin_page))
         .route("/admin/onboard", post(admin_onboard))
         .route(
             "/admin/hosts",
@@ -86,14 +90,25 @@ pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) 
             "/admin/recovery-jobs/{job_id}/resolve",
             post(admin_resolve_recovery_job),
         )
-        .route("/login/{public_token}", get(login_page))
-        .route("/service/{public_token}", get(service_page))
-        .route("/public/login/{public_token}", get(get_public_login))
+        .route(
+            "/public/login/{public_token}/meta",
+            get(get_public_login_meta),
+        )
+        .route("/public/login/{public_token}/qr", get(get_public_login_qr))
+        .route(
+            "/public/login/{control_token}/identity",
+            post(submit_login_identity),
+        )
+        .route(
+            "/public/login/{control_token}/platform",
+            axum::routing::post(select_login_platform),
+        )
         .route(
             "/public/login/{public_token}/events",
             get(login_status_events),
         )
         .route("/public/login/{control_token}/confirm", post(confirm_login))
+        .route("/public/login/{public_token}", get(get_public_login))
         .route("/r/{public_token}", get(get_service_status))
         .route(
             "/r/{control_token}/pause",
