@@ -64,7 +64,7 @@ class LoginDetectService:
                 masked_account=masked_account,
                 character_name=request.character_name,
                 server_name=server_name,
-                game_uid=request.game_uid,
+                game_uid=None,
             )
         except Exception as error:
             return LoginDetectResponse(
