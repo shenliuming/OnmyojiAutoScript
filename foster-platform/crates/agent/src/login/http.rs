@@ -56,7 +56,6 @@ struct DetectLoginRequest {
     config_name: String,
     platform: String,
     character_name: String,
-    game_uid: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,7 +124,6 @@ where
                     config_name: config.oas_config_name.clone(),
                     platform: command.platform.clone(),
                     character_name: command.character_name.clone(),
-                    game_uid: command.game_uid.clone(),
                 })
                 .send()
                 .await;
