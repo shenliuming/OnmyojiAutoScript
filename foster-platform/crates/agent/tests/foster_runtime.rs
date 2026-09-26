@@ -328,7 +328,6 @@ async fn foster_result_survives_websocket_reconnect() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 #[tokio::test]
 async fn runtime_marks_emulator_busy_and_rejects_competing_command() -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -340,8 +339,8 @@ async fn runtime_marks_emulator_busy_and_rejects_competing_command() -> anyhow::
         adb_serial: Some("127.0.0.1:5555".into()),
     }]);
 
-    let runtime = AgentRuntime::new(test_config(url), driver)
-        .with_foster_executor(CountingFosterExecutor {
+    let runtime =
+        AgentRuntime::new(test_config(url), driver).with_foster_executor(CountingFosterExecutor {
             count: count.clone(),
             delay: Duration::from_millis(250),
         });
