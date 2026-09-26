@@ -309,13 +309,8 @@ impl EnrollmentService {
 
             if cancel_login_session_row(&mut tx, session.id, "SESSION_EXPIRED").await? {
                 release_pending_binding_tx(&mut tx, session.binding_id).await?;
-                release_emulator_lease(
-                    &mut tx,
-                    session.emulator_id,
-                    "LOGIN",
-                    &session.session_no,
-                )
-                .await?;
+                release_emulator_lease(&mut tx, session.emulator_id, "LOGIN", &session.session_no)
+                    .await?;
                 expired += 1;
             }
 
@@ -347,13 +342,8 @@ impl EnrollmentService {
 
         if cancel_login_session_row(&mut tx, session.id, "USER_CANCELLED").await? {
             release_pending_binding_tx(&mut tx, session.binding_id).await?;
-            release_emulator_lease(
-                &mut tx,
-                session.emulator_id,
-                "LOGIN",
-                &session.session_no,
-            )
-            .await?;
+            release_emulator_lease(&mut tx, session.emulator_id, "LOGIN", &session.session_no)
+                .await?;
         }
 
         tx.commit().await?;
