@@ -146,6 +146,9 @@ async fn start_login_emits_ordered_login_events() -> anyhow::Result<()> {
             session_no: "LOGIN-001".into(),
             game_account_id: 1001,
             emulator_code: "emu-01".into(),
+            platform: "ANDROID".into(),
+            character_name: "角色A".into(),
+            game_uid: "10001".into(),
         }),
     )
     .await?;
@@ -251,6 +254,9 @@ async fn heartbeat_continues_while_waiting_for_login_identity() -> anyhow::Resul
             session_no: "LOGIN-SLOW".into(),
             game_account_id: 1001,
             emulator_code: "emu-01".into(),
+            platform: "ANDROID".into(),
+            character_name: "角色A".into(),
+            game_uid: "10001".into(),
         }),
     )
     .await?;
@@ -302,6 +308,9 @@ async fn duplicate_start_login_executes_once_and_replays_terminal_identity() -> 
         session_no: "LOGIN-DEDUPE".into(),
         game_account_id: 1001,
         emulator_code: "emu-01".into(),
+        platform: "ANDROID".into(),
+        character_name: "角色A".into(),
+        game_uid: "10001".into(),
     });
 
     send_command_with_id(&mut socket, command_id, command.clone()).await?;
