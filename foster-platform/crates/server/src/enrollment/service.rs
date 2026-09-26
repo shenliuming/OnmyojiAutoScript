@@ -363,8 +363,16 @@ impl EnrollmentService {
             ocr_aliases: Vec::new(),
         };
 
-        if account.character_name.as_deref() != detected.character_name.as_deref()
-            || account.game_uid.as_deref() != detected.game_uid.as_deref()
+        if account
+            .character_name
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .is_some_and(|expected| detected.character_name.as_deref() != Some(expected))
+            || account
+                .game_uid
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .is_some_and(|expected| detected.game_uid.as_deref() != Some(expected))
         {
             return Err(EnrollmentError::IdentityRejected);
         }
