@@ -14,7 +14,10 @@ use uuid::Uuid;
 
 use crate::{
     agent_gateway::registry::AgentRegistry,
-    control_plane::{AllocationError, BindingAllocator},
+    control_plane::{
+        AllocationError, BindingAllocator, EmulatorLeaseService, release_emulator_lease,
+        try_acquire_emulator_lease,
+    },
 };
 
 use super::{
@@ -110,10 +113,16 @@ impl EnrollmentService {
                     event.game_uid.as_deref(),
                 )
                 .await?;
+                EmulatorLeaseService::new(self.pool.clone())
+                    .release_owner("LOGIN", &event.session_no)
+                    .await?;
             }
             AgentEvent::LoginFailed(event) => {
                 let reason = format!("{}: {}", event.code, event.message);
                 mark_login_failed(&self.pool, host_id, &event.session_no, &reason).await?;
+                EmulatorLeaseService::new(self.pool.clone())
+                    .release_owner("LOGIN", &event.session_no)
+                    .await?;
             }
             AgentEvent::Hello(_)
             | AgentEvent::Heartbeat(_)
@@ -176,6 +185,23 @@ impl EnrollmentService {
             .filter(|value| !value.trim().is_empty())
             .ok_or(EnrollmentError::InvalidLoginTarget)?;
 
+        let command_id = login_command_id(&target.session_no);
+        let lease = try_acquire_emulator_lease(
+            &mut tx,
+            target.emulator_id,
+            command_id,
+            "LOGIN",
+            &target.session_no,
+            Duration::from_secs(15 * 60),
+        )
+        .await?;
+
+        if lease.is_none() {
+            mark_login_waiting_emulator(&mut tx, target.id).await?;
+            tx.commit().await?;
+            return Ok(DispatchLoginResult::WaitingEmulator);
+        }
+
         let command = ServerCommand::StartLogin(StartLoginCommand {
             session_no: target.session_no.clone(),
             game_account_id: target.game_account_id,
@@ -187,11 +213,7 @@ impl EnrollmentService {
 
         let delivered = tokio::time::timeout(
             Duration::from_secs(5),
-            registry.send_command_with_id(
-                target.host_id,
-                login_command_id(&target.session_no),
-                command,
-            ),
+            registry.send_command_with_id(target.host_id, command_id, command),
         )
         .await;
 
@@ -204,6 +226,13 @@ impl EnrollmentService {
                 Ok(DispatchLoginResult::Dispatched)
             }
             Ok(Err(_)) | Err(_) => {
+                release_emulator_lease(
+                    &mut tx,
+                    target.emulator_id,
+                    "LOGIN",
+                    &target.session_no,
+                )
+                .await?;
                 mark_login_waiting_emulator(&mut tx, target.id).await?;
                 tx.commit().await?;
                 Ok(DispatchLoginResult::WaitingEmulator)
