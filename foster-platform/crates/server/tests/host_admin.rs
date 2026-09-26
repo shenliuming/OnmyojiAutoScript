@@ -222,9 +222,10 @@ async fn host_list_reports_emulator_capacity_and_bindings(pool: MySqlPool) -> an
 
     let emu_a = sqlx::query(
         "INSERT INTO emulator_instance(
-            host_id, emulator_code, driver_type, max_account_count, status
+            host_id, emulator_code, driver_type, max_account_count,
+            status, lifecycle_status
          )
-         VALUES (?, 'emu-cap-a', 'ADB', 3, 'IDLE')",
+         VALUES (?, 'emu-cap-a', 'ADB', 3, 'IDLE', 'READY')",
     )
     .bind(host_id)
     .execute(&pool)
