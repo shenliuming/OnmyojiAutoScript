@@ -365,6 +365,34 @@ pub async fn insert_enrollment_identity(
     Ok(())
 }
 
+pub async fn insert_user_confirmed_uid(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+    game_uid: &str,
+    normalized_value: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO game_account_identity(
+            game_account_id,
+            identity_type,
+            identity_value,
+            normalized_value,
+            source,
+            confidence,
+            enabled,
+            last_seen_at
+         )
+         VALUES (?, 'GAME_UID', ?, ?, 'USER_CONFIRMED', 100, 1, NOW(3))",
+    )
+    .bind(game_account_id)
+    .bind(game_uid)
+    .bind(normalized_value)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn activate_pending_binding(
     tx: &mut Transaction<'_, MySql>,
     binding_id: i64,
