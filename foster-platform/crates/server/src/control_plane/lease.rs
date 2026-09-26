@@ -148,3 +148,24 @@ pub async fn try_acquire_emulator_lease(
         lease_token,
     }))
 }
+
+
+pub async fn release_emulator_lease(
+    tx: &mut Transaction<'_, MySql>,
+    emulator_id: i64,
+    owner_type: &str,
+    owner_key: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "DELETE FROM emulator_lease
+         WHERE emulator_id = ?
+           AND owner_type = ?
+           AND owner_key = ?",
+    )
+    .bind(emulator_id)
+    .bind(owner_type)
+    .bind(owner_key)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
