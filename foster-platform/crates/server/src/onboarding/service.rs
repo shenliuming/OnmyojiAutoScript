@@ -136,9 +136,7 @@ impl OnboardingService {
             .rotate_share_link(subscription_id, Some(service_end_at))
             .await?;
 
-        let dispatch = EnrollmentService::new(self.pool.clone())
-            .dispatch_login_session(&login.session_no, registry)
-            .await?;
+        let _ = registry;
 
         Ok(OnboardCustomerResult {
             subscription_no: subscription_no.to_string(),
@@ -150,7 +148,7 @@ impl OnboardingService {
                 "/service/{}#control={}",
                 share.public_token, share.control_token
             ),
-            login_dispatch_status: dispatch_status_name(dispatch).to_string(),
+            login_dispatch_status: "AWAITING_USER_INPUT".to_string(),
         })
     }
 }
