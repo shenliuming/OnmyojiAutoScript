@@ -23,6 +23,7 @@ use super::{
         NewLoginSession, TrustedIdentityRow, activate_game_account, activate_pending_binding,
         activate_pending_subscriptions, cancel_login_session_row, complete_login_session,
         find_expired_login_session_ids, insert_enrollment_identity, insert_login_session,
+        insert_user_confirmed_uid,
         load_trusted_identities, lock_binding, lock_game_account, lock_login_dispatch_target,
         lock_login_session_by_control_hash, lock_login_session_by_id, mark_login_failed,
         mark_login_identity_detected, mark_login_preparing, mark_login_preparing_after_dispatch,
@@ -368,11 +369,6 @@ impl EnrollmentService {
             .as_deref()
             .filter(|value| !value.trim().is_empty())
             .is_some_and(|expected| detected.character_name.as_deref() != Some(expected))
-            || account
-                .game_uid
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .is_some_and(|expected| detected.game_uid.as_deref() != Some(expected))
         {
             return Err(EnrollmentError::IdentityRejected);
         }
@@ -398,6 +394,15 @@ impl EnrollmentService {
             ) {
                 return Err(EnrollmentError::IdentityRejected);
             }
+        }
+
+        if let Some(game_uid) = account
+            .game_uid
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            let normalized = normalize_identity(IdentityType::GameUid, game_uid);
+            insert_user_confirmed_uid(&mut tx, account.id, game_uid, &normalized).await?;
         }
 
         if !activate_pending_binding(&mut tx, binding.id).await? {
