@@ -244,14 +244,6 @@ impl FosterDispatchService {
             return Ok(());
         }
 
-        EmulatorLeaseService::new(self.pool.clone())
-            .release_owner("FOSTER", &event.job_id.to_string())
-            .await?;
-
-        EmulatorLeaseService::new(self.pool.clone())
-            .release_owner("FOSTER", &event.job_id.to_string())
-            .await?;
-
         let Some(status) = current_job_status(&self.pool, event.job_id).await? else {
             return Ok(());
         };
@@ -319,6 +311,10 @@ impl FosterDispatchService {
         if !self.is_current_attempt(event.job_id, event.attempt).await? {
             return Ok(());
         }
+
+        EmulatorLeaseService::new(self.pool.clone())
+            .release_owner("FOSTER", &event.job_id.to_string())
+            .await?;
 
         let Some(status) = current_job_status(&self.pool, event.job_id).await? else {
             return Ok(());
@@ -407,6 +403,10 @@ impl FosterDispatchService {
         if !self.is_current_attempt(event.job_id, event.attempt).await? {
             return Ok(());
         }
+
+        EmulatorLeaseService::new(self.pool.clone())
+            .release_owner("FOSTER", &event.job_id.to_string())
+            .await?;
 
         let Some(status) = current_job_status(&self.pool, event.job_id).await? else {
             return Ok(());
