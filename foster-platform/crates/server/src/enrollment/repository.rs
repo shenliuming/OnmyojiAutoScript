@@ -240,6 +240,9 @@ pub struct LockedBinding {
 pub struct LockedGameAccount {
     pub id: i64,
     pub active_emulator_id: Option<i64>,
+    pub platform: Option<String>,
+    pub character_name: Option<String>,
+    pub game_uid: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -296,7 +299,7 @@ pub async fn lock_game_account(
     game_account_id: i64,
 ) -> Result<Option<LockedGameAccount>, sqlx::Error> {
     sqlx::query_as::<_, LockedGameAccount>(
-        "SELECT id, active_emulator_id
+        "SELECT id, active_emulator_id, platform, character_name, game_uid
          FROM game_account
          WHERE id = ?
          FOR UPDATE",
