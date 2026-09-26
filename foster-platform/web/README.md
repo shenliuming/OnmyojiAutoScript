@@ -6,4 +6,4 @@
 
 Vite 的开发与预览代理会原样转发 `/admin/*`、`/public/login/*`、`/r/*`、`/healthz`、`/readyz` 和 `/agent/ws` 到 `http://127.0.0.1:8080`。其中 `/agent/ws` 支持 WebSocket 升级；SSE 响应保持流式传输，不做内容转换。`/admin`、`/login/:token`、`/service/:token` 由前端页面处理。
 
-外部 NATAPP 隧道只指向前端监听地址 `127.0.0.1:5173`，由前端同源代理访问后端。该代理是 Vite 开发/预览服务的能力；正式部署若换用其他 Web 服务器，需配置相同的路径转发规则。
+外部 NATAPP 隧道只指向前端监听地址 `127.0.0.1:5173`，由前端同源代理访问后端。Vite 开发与预览服务仅额外允许 `j55d6643.natappfree.cc` 作为外部 Host；更换 NATAPP 域名时须同步更新 `vite.config.ts` 中的允许列表。该代理是 Vite 开发/预览服务的能力；正式部署若换用其他 Web 服务器，需配置相同的路径转发规则。

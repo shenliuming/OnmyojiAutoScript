@@ -52,4 +52,13 @@ describe('backend proxy paths', () => {
     expect(config.server?.port).toBe(5173)
     expect(config.server?.strictPort).toBe(true)
   })
+
+  it('allows the current NATAPP host in dev and preview without a wildcard', () => {
+    for (const listener of [config.server, config.preview]) {
+      const allowed = listener?.allowedHosts
+      expect(allowed).toEqual(['j55d6643.natappfree.cc'])
+      expect(allowed).not.toContain('attacker.example')
+      expect(allowed).not.toContain('.natappfree.cc')
+    }
+  })
 })
