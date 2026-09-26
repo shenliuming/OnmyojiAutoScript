@@ -136,7 +136,6 @@ impl EmulatorRuntimeLease {
 
 impl Drop for EmulatorRuntimeLease {
     fn drop(&mut self) {
-        self.registry
-            .release(&self.emulator_code, self.command_id);
+        self.registry.release(&self.emulator_code, self.command_id);
     }
 }
