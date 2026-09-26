@@ -26,9 +26,9 @@ async fn seed_emulator_capacity(pool: &MySqlPool) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO emulator_instance(
             host_id, emulator_code, driver_type,
-            max_account_count, status
+            max_account_count, status, lifecycle_status
          )
-         VALUES (?, 'emu-onboard', 'FAKE', 5, 'IDLE')",
+         VALUES (?, 'emu-onboard', 'FAKE', 5, 'IDLE', 'READY')",
     )
     .bind(host_id)
     .execute(pool)
