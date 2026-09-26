@@ -10,4 +10,6 @@ pub use generic_adb::{
     SystemCommandRunner,
 };
 
-pub use runtime_state::{EmulatorRuntimeError, EmulatorRuntimeLease, EmulatorRuntimeRegistry, EmulatorRuntimeSnapshot};
+pub use runtime_state::{
+    EmulatorRuntimeError, EmulatorRuntimeLease, EmulatorRuntimeRegistry, EmulatorRuntimeSnapshot,
+};
