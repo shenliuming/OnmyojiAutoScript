@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use foster_domain::EmulatorStatus;
+use foster_domain::EmulatorLifecycleStatus;
 use foster_protocol::EmulatorDescriptor;
 
 use super::{EmulatorDriver, EmulatorDriverError};
@@ -42,9 +42,12 @@ impl EmulatorDriver for FakeEmulatorDriver {
         Ok(self.find(instance_id)?.adb_serial.clone())
     }
 
-    async fn status(&self, instance_id: &str) -> Result<EmulatorStatus, EmulatorDriverError> {
+    async fn status(
+        &self,
+        instance_id: &str,
+    ) -> Result<EmulatorLifecycleStatus, EmulatorDriverError> {
         self.find(instance_id)?;
-        Ok(EmulatorStatus::Idle)
+        Ok(EmulatorLifecycleStatus::Ready)
     }
 
     async fn screenshot(&self, instance_id: &str) -> Result<Vec<u8>, EmulatorDriverError> {
