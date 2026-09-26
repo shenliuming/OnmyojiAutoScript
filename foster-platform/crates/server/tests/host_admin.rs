@@ -305,9 +305,13 @@ async fn emulator_capacity_can_be_configured_without_sql(pool: MySqlPool) -> any
 
     let emulator_id = sqlx::query(
         "INSERT INTO emulator_instance(
-            host_id, emulator_code, driver_type, max_account_count, status
+            host_id, emulator_code, driver_type, max_account_count,
+            status, lifecycle_status, occupancy_status, activity_type
          )
-         VALUES (?, 'emu-admin-cap', 'ADB', 5, 'IDLE')",
+         VALUES (
+            ?, 'emu-admin-cap', 'ADB', 5,
+            'IDLE', 'READY', 'IDLE', 'NONE'
+         )",
     )
     .bind(host_id)
     .execute(&pool)
@@ -355,6 +359,10 @@ async fn emulator_capacity_can_be_configured_without_sql(pool: MySqlPool) -> any
     assert_eq!(emulator["id"].as_i64(), Some(emulator_id));
     assert_eq!(emulator["emulatorCode"].as_str(), Some("emu-admin-cap"));
     assert_eq!(emulator["maxAccountCount"].as_i64(), Some(3));
+    assert_eq!(emulator["lifecycleStatus"].as_str(), Some("READY"));
+    assert_eq!(emulator["occupancyStatus"].as_str(), Some("IDLE"));
+    assert_eq!(emulator["activityType"].as_str(), Some("NONE"));
+    assert_eq!(emulator["available"].as_bool(), Some(true));
     assert_eq!(emulator["boundAccounts"].as_i64(), Some(0));
 
     Ok(())
