@@ -25,9 +25,9 @@ async fn seed_emulator(
     let result = sqlx::query(
         "INSERT INTO emulator_instance(
             host_id, emulator_code, driver_type,
-            max_account_count, status
+            max_account_count, status, lifecycle_status
          )
-         VALUES (?, ?, 'FAKE', ?, 'IDLE')",
+         VALUES (?, ?, 'FAKE', ?, 'IDLE', 'READY')",
     )
     .bind(host_id)
     .bind(format!("emu-expiry-{suffix}"))
