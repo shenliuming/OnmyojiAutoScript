@@ -47,6 +47,11 @@ async fn login_h5_is_static_and_reads_control_token_from_fragment(
     let html = text_body(response).await?;
     assert!(html.contains("location.hash"));
     assert!(html.contains("/public/login/"));
+    assert!(html.contains("Android"));
+    assert!(html.contains("iOS"));
+    assert!(html.contains("characterName"));
+    assert!(html.contains("gameUid"));
+    assert!(html.contains("/start"));
     assert!(!html.contains("public-login-token"));
     assert!(!html.contains("admin"));
 
