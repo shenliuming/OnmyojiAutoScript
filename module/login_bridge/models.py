@@ -7,7 +7,6 @@ class LoginDetectRequest(BaseModel):
     config_name: str
     platform: str
     character_name: str
-    game_uid: str
 
 
 class LoginDetectResponse(BaseModel):
