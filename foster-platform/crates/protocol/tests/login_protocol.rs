@@ -15,6 +15,9 @@ fn start_login_serializes_with_stable_tag() {
             session_no: "LOGIN-001".into(),
             game_account_id: 42,
             emulator_code: "emu-01".into(),
+            platform: "ANDROID".into(),
+            character_name: "角色A".into(),
+            game_uid: "10001".into(),
         }),
     };
 
@@ -23,6 +26,9 @@ fn start_login_serializes_with_stable_tag() {
     assert_eq!(value["payload"]["type"], "START_LOGIN");
     assert_eq!(value["payload"]["data"]["session_no"], "LOGIN-001");
     assert_eq!(value["payload"]["data"]["emulator_code"], "emu-01");
+    assert_eq!(value["payload"]["data"]["platform"], "ANDROID");
+    assert_eq!(value["payload"]["data"]["character_name"], "角色A");
+    assert_eq!(value["payload"]["data"]["game_uid"], "10001");
 }
 
 #[test]
