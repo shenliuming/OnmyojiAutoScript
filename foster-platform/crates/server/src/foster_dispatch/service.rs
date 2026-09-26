@@ -136,7 +136,7 @@ impl FosterDispatchService {
         };
 
         let command_id = foster_command_id(job_id, target.retry_count);
-        let lease_owner = job_id.to_string();
+        let lease_owner = format!("{job_id}:{}", target.retry_count);
         let lease = EmulatorLeaseService::new(self.pool.clone())
             .try_acquire(
                 target.emulator_id,
@@ -313,7 +313,7 @@ impl FosterDispatchService {
         }
 
         EmulatorLeaseService::new(self.pool.clone())
-            .release_owner("FOSTER", &event.job_id.to_string())
+            .release_owner("FOSTER", &format!("{}:{}", event.job_id, event.attempt))
             .await?;
 
         let Some(status) = current_job_status(&self.pool, event.job_id).await? else {
@@ -405,7 +405,7 @@ impl FosterDispatchService {
         }
 
         EmulatorLeaseService::new(self.pool.clone())
-            .release_owner("FOSTER", &event.job_id.to_string())
+            .release_owner("FOSTER", &format!("{}:{}", event.job_id, event.attempt))
             .await?;
 
         let Some(status) = current_job_status(&self.pool, event.job_id).await? else {
