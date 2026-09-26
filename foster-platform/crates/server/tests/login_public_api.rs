@@ -248,7 +248,6 @@ async fn sse_immediately_emits_current_login_status(pool: MySqlPool) -> anyhow::
     Ok(())
 }
 
-
 #[sqlx::test(migrations = "../../migrations")]
 async fn start_login_persists_user_target_before_dispatch(pool: MySqlPool) -> anyhow::Result<()> {
     let (_service, session_no, _public_token, control_token) = seed_fixture(&pool).await?;
