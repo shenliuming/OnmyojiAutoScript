@@ -84,7 +84,7 @@ pub async fn get_host(pool: &MySqlPool, host_id: i64) -> Result<Option<HostAdmin
                 SELECT COUNT(*)
                 FROM emulator_instance e
                 WHERE e.host_id = h.id
-                  AND e.status <> 'OFFLINE'
+                  AND e.lifecycle_status <> 'OFFLINE'
             ) AS online_emulators,
             CAST(COALESCE((
                 SELECT SUM(e.max_account_count)
@@ -124,7 +124,7 @@ pub async fn list_hosts(pool: &MySqlPool) -> Result<Vec<HostAdminRow>, sqlx::Err
                 SELECT COUNT(*)
                 FROM emulator_instance e
                 WHERE e.host_id = h.id
-                  AND e.status <> 'OFFLINE'
+                  AND e.lifecycle_status <> 'OFFLINE'
             ) AS online_emulators,
             CAST(COALESCE((
                 SELECT SUM(e.max_account_count)
@@ -153,8 +153,20 @@ pub struct EmulatorAdminRow {
     pub driver_type: String,
     pub max_account_count: i32,
     pub status: String,
+    pub lifecycle_status: String,
+    pub occupancy_status: String,
+    pub activity_type: String,
+    pub activity_stage: Option<String>,
     pub adb_serial: Option<String>,
     pub current_job_id: Option<String>,
+    pub current_command_id: Option<String>,
+    pub current_foster_job_id: Option<i64>,
+    pub current_login_session_no: Option<String>,
+    pub current_game_account_id: Option<i64>,
+    pub activity_started_at: Option<chrono::NaiveDateTime>,
+    pub lease_owner_type: Option<String>,
+    pub lease_owner_key: Option<String>,
+    pub lease_expires_at: Option<chrono::NaiveDateTime>,
     pub last_heartbeat_at: Option<chrono::NaiveDateTime>,
     pub bound_accounts: i64,
 }
@@ -171,8 +183,20 @@ pub async fn list_host_emulators(
             e.driver_type,
             e.max_account_count,
             e.status,
+            e.lifecycle_status,
+            e.occupancy_status,
+            e.activity_type,
+            e.activity_stage,
             e.adb_serial,
             e.current_job_id,
+            e.current_command_id,
+            e.current_foster_job_id,
+            e.current_login_session_no,
+            e.current_game_account_id,
+            e.activity_started_at,
+            l.owner_type AS lease_owner_type,
+            l.owner_key AS lease_owner_key,
+            l.expires_at AS lease_expires_at,
             e.last_heartbeat_at,
             (
                 SELECT COUNT(*)
@@ -181,6 +205,9 @@ pub async fn list_host_emulators(
                   AND b.status IN ('PENDING', 'ACTIVE', 'MIGRATING')
             ) AS bound_accounts
          FROM emulator_instance e
+         LEFT JOIN emulator_lease l
+           ON l.emulator_id = e.id
+          AND l.expires_at > NOW(3)
          WHERE e.host_id = ?
          ORDER BY e.id ASC",
     )
@@ -201,8 +228,20 @@ pub async fn get_emulator(
             e.driver_type,
             e.max_account_count,
             e.status,
+            e.lifecycle_status,
+            e.occupancy_status,
+            e.activity_type,
+            e.activity_stage,
             e.adb_serial,
             e.current_job_id,
+            e.current_command_id,
+            e.current_foster_job_id,
+            e.current_login_session_no,
+            e.current_game_account_id,
+            e.activity_started_at,
+            l.owner_type AS lease_owner_type,
+            l.owner_key AS lease_owner_key,
+            l.expires_at AS lease_expires_at,
             e.last_heartbeat_at,
             (
                 SELECT COUNT(*)
@@ -211,6 +250,9 @@ pub async fn get_emulator(
                   AND b.status IN ('PENDING', 'ACTIVE', 'MIGRATING')
             ) AS bound_accounts
          FROM emulator_instance e
+         LEFT JOIN emulator_lease l
+           ON l.emulator_id = e.id
+          AND l.expires_at > NOW(3)
          WHERE e.id = ?",
     )
     .bind(emulator_id)
