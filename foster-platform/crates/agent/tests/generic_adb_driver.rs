@@ -153,8 +153,14 @@ async fn adb_state_controls_emulator_health() -> anyhow::Result<()> {
     let driver =
         GenericAdbEmulatorDriver::from_json_with_runner(config_json(), "adb".into(), runner)?;
 
-    assert_eq!(driver.status("emu-01").await?, EmulatorLifecycleStatus::Ready);
-    assert_eq!(driver.status("emu-01").await?, EmulatorLifecycleStatus::Offline);
+    assert_eq!(
+        driver.status("emu-01").await?,
+        EmulatorLifecycleStatus::Ready
+    );
+    assert_eq!(
+        driver.status("emu-01").await?,
+        EmulatorLifecycleStatus::Offline
+    );
 
     Ok(())
 }
