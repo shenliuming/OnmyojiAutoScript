@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - feat/foster-platform
+      - feat/foster-login-closure
     paths:
       - "foster-platform/**"
       - "module/login_bridge/**"

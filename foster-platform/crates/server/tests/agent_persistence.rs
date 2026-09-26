@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use foster_domain::EmulatorStatus;
+use foster_domain::{EmulatorActivity, EmulatorLifecycleStatus, EmulatorOccupancyStatus};
 use foster_protocol::{
     AgentEnvelope, AgentEvent, AgentHello, EmulatorDescriptor, EmulatorHeartbeat, EmulatorSnapshot,
     Heartbeat, PROTOCOL_VERSION,
@@ -328,7 +328,7 @@ async fn emulator_snapshot_preserves_server_controlled_fields(
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn heartbeat_updates_emulator_status(pool: MySqlPool) -> anyhow::Result<()> {
+async fn heartbeat_updates_emulator_runtime_state(pool: MySqlPool) -> anyhow::Result<()> {
     seed_host(&pool, 7).await?;
     sqlx::query(
         "INSERT INTO emulator_instance(
@@ -350,7 +350,15 @@ async fn heartbeat_updates_emulator_status(pool: MySqlPool) -> anyhow::Result<()
             host_id: 7,
             emulators: vec![EmulatorHeartbeat {
                 emulator_code: "emu-status".into(),
-                status: EmulatorStatus::Offline,
+                lifecycle: EmulatorLifecycleStatus::Ready,
+                occupancy: EmulatorOccupancyStatus::Busy,
+                activity: EmulatorActivity::Login,
+                activity_stage: Some("WAITING_IDENTITY".into()),
+                current_command_id: Some(Uuid::nil()),
+                current_job_id: None,
+                current_login_session_no: Some("LOGIN-001".into()),
+                current_game_account_id: Some(1001),
+                activity_started_at: Some(chrono::Utc::now()),
             }],
         }),
     )
@@ -358,13 +366,21 @@ async fn heartbeat_updates_emulator_status(pool: MySqlPool) -> anyhow::Result<()
 
     assert!(
         wait_until(Duration::from_secs(1), async || {
-            sqlx::query_scalar::<_, String>(
-                "SELECT status FROM emulator_instance
+            sqlx::query_as::<_, (String, String, String, String, Option<String>)>(
+                "SELECT status, lifecycle_status, occupancy_status,
+                        activity_type, current_login_session_no
+                 FROM emulator_instance
                  WHERE emulator_code = 'emu-status'",
             )
             .fetch_one(&pool)
             .await
-            .is_ok_and(|status| status == "OFFLINE")
+            .is_ok_and(|row| {
+                row.0 == "LOGIN_SESSION"
+                    && row.1 == "READY"
+                    && row.2 == "BUSY"
+                    && row.3 == "LOGIN"
+                    && row.4.as_deref() == Some("LOGIN-001")
+            })
         })
         .await
     );

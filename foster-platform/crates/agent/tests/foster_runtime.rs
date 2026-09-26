@@ -13,10 +13,10 @@ use foster_agent::{
     foster::{FosterExecution, FosterExecutor, FosterExecutorError},
     runtime::AgentRuntime,
 };
-use foster_domain::ResourceMode;
+use foster_domain::{EmulatorActivity, EmulatorOccupancyStatus, FosterErrorCode, ResourceMode};
 use foster_protocol::{
-    AgentEnvelope, AgentEvent, ExecuteFosterCommand, FosterDetectedIdentity, FosterTargetIdentity,
-    PROTOCOL_VERSION, ServerCommand, ServerEnvelope,
+    AgentEnvelope, AgentEvent, EmulatorDescriptor, ExecuteFosterCommand, FosterDetectedIdentity,
+    FosterTargetIdentity, PROTOCOL_VERSION, ServerCommand, ServerEnvelope,
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
@@ -322,6 +322,73 @@ async fn foster_result_survives_websocket_reconnect() -> anyhow::Result<()> {
     let _snapshot = read_agent_event(&mut second_socket).await?;
     wait_for_foster_success(&mut second_socket, 88).await?;
 
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+
+    task.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn runtime_marks_emulator_busy_and_rejects_competing_command() -> anyhow::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let url = format!("ws://{}/agent/ws", listener.local_addr()?);
+    let count = Arc::new(AtomicUsize::new(0));
+    let driver = FakeEmulatorDriver::new(vec![EmulatorDescriptor {
+        emulator_code: "emu-01".into(),
+        driver_type: "FAKE".into(),
+        adb_serial: Some("127.0.0.1:5555".into()),
+    }]);
+
+    let runtime =
+        AgentRuntime::new(test_config(url), driver).with_foster_executor(CountingFosterExecutor {
+            count: count.clone(),
+            delay: Duration::from_millis(250),
+        });
+    let task = tokio::spawn(runtime.run());
+
+    let mut socket = accept_authenticated(&listener).await?;
+    let _hello = read_agent_event(&mut socket).await?;
+    let _snapshot = read_agent_event(&mut socket).await?;
+
+    let first = foster_envelope(Uuid::new_v4(), 501, 0);
+    send_server_envelope(&mut socket, &first).await?;
+
+    let mut saw_busy = false;
+    for _ in 0..10 {
+        let event = read_agent_event(&mut socket).await?;
+        if let AgentEvent::Heartbeat(value) = event.payload {
+            if value.emulators.iter().any(|emulator| {
+                emulator.emulator_code == "emu-01"
+                    && emulator.occupancy == EmulatorOccupancyStatus::Busy
+                    && emulator.activity == EmulatorActivity::Foster
+                    && emulator.current_job_id == Some(501)
+            }) {
+                saw_busy = true;
+                break;
+            }
+        }
+    }
+    assert!(saw_busy, "heartbeat never exposed busy foster runtime");
+
+    let second = foster_envelope(Uuid::new_v4(), 502, 0);
+    send_server_envelope(&mut socket, &second).await?;
+
+    let mut rejected = false;
+    for _ in 0..10 {
+        let event = read_agent_event(&mut socket).await?;
+        if matches!(
+            event.payload,
+            AgentEvent::FosterFailed(ref value)
+                if value.job_id == 502
+                    && value.error_code == FosterErrorCode::GameBusy
+        ) {
+            rejected = true;
+            break;
+        }
+    }
+
+    assert!(rejected, "competing emulator command was not rejected");
+    wait_for_foster_success(&mut socket, 501).await?;
     assert_eq!(count.load(Ordering::SeqCst), 1);
 
     task.abort();

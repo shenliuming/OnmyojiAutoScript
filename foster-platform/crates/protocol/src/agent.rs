@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
-use foster_domain::{EmulatorStatus, FosterErrorCode};
+use foster_domain::{
+    EmulatorActivity, EmulatorLifecycleStatus, EmulatorOccupancyStatus, FosterErrorCode,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -44,7 +46,24 @@ pub struct AgentHello {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmulatorHeartbeat {
     pub emulator_code: String,
-    pub status: EmulatorStatus,
+    #[serde(default)]
+    pub lifecycle: EmulatorLifecycleStatus,
+    #[serde(default)]
+    pub occupancy: EmulatorOccupancyStatus,
+    #[serde(default)]
+    pub activity: EmulatorActivity,
+    #[serde(default)]
+    pub activity_stage: Option<String>,
+    #[serde(default)]
+    pub current_command_id: Option<Uuid>,
+    #[serde(default)]
+    pub current_job_id: Option<i64>,
+    #[serde(default)]
+    pub current_login_session_no: Option<String>,
+    #[serde(default)]
+    pub current_game_account_id: Option<i64>,
+    #[serde(default)]
+    pub activity_started_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

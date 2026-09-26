@@ -1,4 +1,4 @@
-use foster_domain::EmulatorStatus;
+use foster_domain::{EmulatorActivity, EmulatorLifecycleStatus, EmulatorOccupancyStatus};
 use foster_protocol::{EmulatorDescriptor, EmulatorHeartbeat};
 use sqlx::{MySql, MySqlPool, Transaction};
 
@@ -70,9 +70,14 @@ pub async fn mark_host_offline(pool: &MySqlPool, host_id: i64) -> Result<(), sql
 
     sqlx::query(
         "UPDATE emulator_instance
-         SET status = 'OFFLINE'
+         SET status = 'OFFLINE',
+             lifecycle_status = 'OFFLINE',
+             occupancy_status = CASE
+                 WHEN occupancy_status = 'BUSY' THEN 'RECOVERY'
+                 ELSE occupancy_status
+             END
          WHERE host_id = ?
-           AND status <> 'MAINTENANCE'",
+           AND lifecycle_status <> 'MAINTENANCE'",
     )
     .bind(host_id)
     .execute(&mut *tx)
@@ -93,9 +98,10 @@ pub async fn upsert_emulator_snapshot(
         sqlx::query(
             "INSERT INTO emulator_instance(
                 host_id, emulator_code, driver_type, adb_serial,
-                status, last_heartbeat_at
+                status, lifecycle_status, occupancy_status,
+                activity_type, last_heartbeat_at
              )
-             VALUES (?, ?, ?, ?, 'OFFLINE', NOW(3))
+             VALUES (?, ?, ?, ?, 'OFFLINE', 'OFFLINE', 'IDLE', 'NONE', NOW(3))
              ON DUPLICATE KEY UPDATE
                 host_id = VALUES(host_id),
                 driver_type = VALUES(driver_type),
@@ -152,7 +158,7 @@ pub async fn candidate_emulator_ids(
     sqlx::query_scalar(
         "SELECT id
          FROM emulator_instance
-         WHERE status = 'IDLE'
+         WHERE lifecycle_status = 'READY'
          ORDER BY id ASC",
     )
     .fetch_all(&mut **tx)
@@ -167,7 +173,7 @@ pub async fn lock_emulator(
         "SELECT id, max_account_count
          FROM emulator_instance
          WHERE id = ?
-           AND status = 'IDLE'
+           AND lifecycle_status = 'READY'
          FOR UPDATE",
     )
     .bind(emulator_id)
@@ -221,14 +227,93 @@ pub async fn update_emulator_heartbeats(
     let mut tx = pool.begin().await?;
 
     for item in items {
+        if item.occupancy == EmulatorOccupancyStatus::Idle {
+            sqlx::query(
+                "UPDATE emulator_instance
+                 SET status = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN 'ERROR'
+                         ELSE ?
+                     END,
+                     lifecycle_status = ?,
+                     occupancy_status = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN 'RECOVERY'
+                         ELSE 'IDLE'
+                     END,
+                     activity_type = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN activity_type
+                         ELSE 'NONE'
+                     END,
+                     activity_stage = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN activity_stage
+                         ELSE NULL
+                     END,
+                     current_command_id = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN current_command_id
+                         ELSE NULL
+                     END,
+                     current_foster_job_id = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN current_foster_job_id
+                         ELSE NULL
+                     END,
+                     current_login_session_no = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN current_login_session_no
+                         ELSE NULL
+                     END,
+                     current_game_account_id = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN current_game_account_id
+                         ELSE NULL
+                     END,
+                     activity_started_at = CASE
+                         WHEN occupancy_status = 'RECOVERY' THEN activity_started_at
+                         ELSE NULL
+                     END,
+                     last_heartbeat_at = NOW(3)
+                 WHERE host_id = ?
+                   AND emulator_code = ?",
+            )
+            .bind(emulator_legacy_status_name(
+                item.lifecycle,
+                item.occupancy,
+                item.activity,
+            ))
+            .bind(emulator_lifecycle_name(item.lifecycle))
+            .bind(host_id)
+            .bind(&item.emulator_code)
+            .execute(&mut *tx)
+            .await?;
+            continue;
+        }
+
         sqlx::query(
             "UPDATE emulator_instance
              SET status = ?,
+                 lifecycle_status = ?,
+                 occupancy_status = ?,
+                 activity_type = ?,
+                 activity_stage = ?,
+                 current_command_id = ?,
+                 current_foster_job_id = ?,
+                 current_login_session_no = ?,
+                 current_game_account_id = ?,
+                 activity_started_at = ?,
                  last_heartbeat_at = NOW(3)
              WHERE host_id = ?
                AND emulator_code = ?",
         )
-        .bind(emulator_status_name(item.status))
+        .bind(emulator_legacy_status_name(
+            item.lifecycle,
+            item.occupancy,
+            item.activity,
+        ))
+        .bind(emulator_lifecycle_name(item.lifecycle))
+        .bind(emulator_occupancy_name(item.occupancy))
+        .bind(emulator_activity_name(item.activity))
+        .bind(&item.activity_stage)
+        .bind(item.current_command_id.map(|value| value.to_string()))
+        .bind(item.current_job_id)
+        .bind(&item.current_login_session_no)
+        .bind(item.current_game_account_id)
+        .bind(item.activity_started_at.map(|value| value.naive_utc()))
         .bind(host_id)
         .bind(&item.emulator_code)
         .execute(&mut *tx)
@@ -239,14 +324,58 @@ pub async fn update_emulator_heartbeats(
     Ok(())
 }
 
-fn emulator_status_name(status: EmulatorStatus) -> &'static str {
+fn emulator_lifecycle_name(status: EmulatorLifecycleStatus) -> &'static str {
     match status {
-        EmulatorStatus::Offline => "OFFLINE",
-        EmulatorStatus::Idle => "IDLE",
-        EmulatorStatus::SwitchingAccount => "SWITCHING_ACCOUNT",
-        EmulatorStatus::Running => "RUNNING",
-        EmulatorStatus::LoginSession => "LOGIN_SESSION",
-        EmulatorStatus::Maintenance => "MAINTENANCE",
-        EmulatorStatus::Error => "ERROR",
+        EmulatorLifecycleStatus::Offline => "OFFLINE",
+        EmulatorLifecycleStatus::Starting => "STARTING",
+        EmulatorLifecycleStatus::Booting => "BOOTING",
+        EmulatorLifecycleStatus::Ready => "READY",
+        EmulatorLifecycleStatus::Stopping => "STOPPING",
+        EmulatorLifecycleStatus::Maintenance => "MAINTENANCE",
+        EmulatorLifecycleStatus::Error => "ERROR",
+    }
+}
+
+fn emulator_occupancy_name(status: EmulatorOccupancyStatus) -> &'static str {
+    match status {
+        EmulatorOccupancyStatus::Idle => "IDLE",
+        EmulatorOccupancyStatus::Busy => "BUSY",
+        EmulatorOccupancyStatus::Recovery => "RECOVERY",
+        EmulatorOccupancyStatus::Maintenance => "MAINTENANCE",
+    }
+}
+
+fn emulator_activity_name(activity: EmulatorActivity) -> &'static str {
+    match activity {
+        EmulatorActivity::None => "NONE",
+        EmulatorActivity::Login => "LOGIN",
+        EmulatorActivity::Foster => "FOSTER",
+        EmulatorActivity::ManualControl => "MANUAL_CONTROL",
+    }
+}
+
+fn emulator_legacy_status_name(
+    lifecycle: EmulatorLifecycleStatus,
+    occupancy: EmulatorOccupancyStatus,
+    activity: EmulatorActivity,
+) -> &'static str {
+    match lifecycle {
+        EmulatorLifecycleStatus::Offline => "OFFLINE",
+        EmulatorLifecycleStatus::Maintenance => "MAINTENANCE",
+        EmulatorLifecycleStatus::Error => "ERROR",
+        EmulatorLifecycleStatus::Starting
+        | EmulatorLifecycleStatus::Booting
+        | EmulatorLifecycleStatus::Stopping => "RUNNING",
+        EmulatorLifecycleStatus::Ready => match occupancy {
+            EmulatorOccupancyStatus::Idle => "IDLE",
+            EmulatorOccupancyStatus::Recovery => "ERROR",
+            EmulatorOccupancyStatus::Maintenance => "MAINTENANCE",
+            EmulatorOccupancyStatus::Busy => match activity {
+                EmulatorActivity::Login => "LOGIN_SESSION",
+                EmulatorActivity::None
+                | EmulatorActivity::Foster
+                | EmulatorActivity::ManualControl => "RUNNING",
+            },
+        },
     }
 }

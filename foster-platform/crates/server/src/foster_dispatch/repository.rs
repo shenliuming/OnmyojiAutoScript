@@ -3,6 +3,7 @@ use sqlx::MySqlPool;
 #[derive(Debug, sqlx::FromRow)]
 pub struct FosterDispatchTargetRow {
     pub game_account_id: i64,
+    pub emulator_id: i64,
     pub status: String,
     pub retry_count: i32,
     pub host_id: i64,
@@ -29,6 +30,7 @@ pub async fn load_dispatch_target(
     sqlx::query_as::<_, FosterDispatchTargetRow>(
         "SELECT
             j.game_account_id,
+            j.emulator_id,
             j.status,
             j.retry_count,
             e.host_id,
