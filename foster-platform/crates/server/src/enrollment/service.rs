@@ -363,6 +363,12 @@ impl EnrollmentService {
             ocr_aliases: Vec::new(),
         };
 
+        if account.character_name.as_deref() != detected.character_name.as_deref()
+            || account.game_uid.as_deref() != detected.game_uid.as_deref()
+        {
+            return Err(EnrollmentError::IdentityRejected);
+        }
+
         let trusted_rows = load_trusted_identities(&mut tx, session.game_account_id).await?;
 
         if trusted_rows.is_empty() {
@@ -476,9 +482,8 @@ fn sha256_hex(value: &str) -> String {
 }
 
 fn first_enrollment_has_strong_identity(detected: &DetectedIdentity) -> bool {
-    has_text(detected.game_uid.as_deref())
-        || (has_text(detected.character_name.as_deref())
-            && has_text(detected.server_name.as_deref()))
+    has_text(detected.character_name.as_deref())
+        && has_text(detected.server_name.as_deref())
 }
 
 fn has_text(value: Option<&str>) -> bool {
