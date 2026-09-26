@@ -61,6 +61,9 @@ fn command() -> StartLoginCommand {
         session_no: "LOGIN-REAL".into(),
         game_account_id: 1001,
         emulator_code: "emu-login".into(),
+        platform: "ANDROID".into(),
+        character_name: "角色A".into(),
+        game_uid: "10001".into(),
     }
 }
 

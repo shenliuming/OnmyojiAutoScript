@@ -54,6 +54,8 @@ where
 #[derive(Debug, Serialize)]
 struct DetectLoginRequest {
     config_name: String,
+    platform: String,
+    character_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,6 +122,8 @@ where
                 .post(format!("{}/login/detect", self.base_url))
                 .json(&DetectLoginRequest {
                     config_name: config.oas_config_name.clone(),
+                    platform: command.platform.clone(),
+                    character_name: command.character_name.clone(),
                 })
                 .send()
                 .await;

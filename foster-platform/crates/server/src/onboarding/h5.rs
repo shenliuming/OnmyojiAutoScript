@@ -19,18 +19,28 @@ const LOGIN_HTML: &str = r##"<!doctype html>
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
 .wrap{max-width:680px;margin:0 auto;padding:28px 18px}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px}
 h1{font-size:20px;margin:0 0 6px}p{margin:6px 0;color:var(--muted)}.status{margin:20px 0;padding:12px;border:1px solid var(--line);border-radius:8px}
-#qr{display:none;max-width:280px;width:100%;margin:16px auto;border-radius:8px}.actions{display:flex;gap:10px;margin-top:18px}
+#qr{display:none;max-width:280px;width:100%;margin:16px auto;border-radius:8px}.actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
 button{border:1px solid var(--line);background:#292d30;color:var(--text);padding:10px 14px;border-radius:7px;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
 .primary{background:#334039;border-color:#53675d}.meta{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--muted);word-break:break-all}
+.form{display:grid;gap:12px;margin:18px 0}.field{display:grid;gap:6px}.field label{color:var(--muted)}
+input,select{width:100%;background:#171a1c;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:10px 11px;font:inherit}
 </style>
 </head>
 <body><main class="wrap"><section class="card">
 <h1>游戏账号登录</h1>
-<p>请使用手机扫码完成登录。系统只保存账号识别信息，不保存密码。</p>
-<div class="status"><strong id="status">正在连接…</strong><p id="detail"></p></div>
+<p>先填写游戏平台和角色信息，再开始扫码登录。系统不保存密码。</p>
+<div id="targetForm" class="form">
+  <div class="field"><label for="platform">游戏平台</label>
+    <select id="platform"><option value="ANDROID">Android</option><option value="IOS">iOS</option></select>
+  </div>
+  <div class="field"><label for="characterName">角色名</label><input id="characterName" autocomplete="off" placeholder="请输入游戏角色名"></div>
+  <div class="field"><label for="gameUid">角色 ID</label><input id="gameUid" autocomplete="off" placeholder="请输入角色 ID"></div>
+  <div class="actions"><button id="start" class="primary">开始登录</button></div>
+</div>
+<div class="status"><strong id="status">请先填写登录信息</strong><p id="detail"></p></div>
 <img id="qr" alt="登录二维码">
 <div id="qrText" class="meta"></div>
-<div class="actions"><button id="confirm" class="primary" disabled>确认这是我的账号</button></div>
+<div class="actions"><button id="confirm" class="primary" disabled>确认角色并绑定</button></div>
 </section></main>
 <script>
 const publicToken=decodeURIComponent(location.pathname.split('/').filter(Boolean).pop()||'');
@@ -38,12 +48,23 @@ const params=new URLSearchParams(location.hash.slice(1));
 const controlToken=params.get('control');
 const statusEl=document.getElementById('status'),detailEl=document.getElementById('detail');
 const qr=document.getElementById('qr'),qrText=document.getElementById('qrText'),confirmBtn=document.getElementById('confirm');
+const startBtn=document.getElementById('start'),platformEl=document.getElementById('platform');
+const characterEl=document.getElementById('characterName'),gameUidEl=document.getElementById('gameUid');
+let loginStarted=false;
 
 function render(data){
   statusEl.textContent=data.status||'UNKNOWN';
   const who=[data.characterName,data.serverName].filter(Boolean).join(' · ');
-  detailEl.textContent=who||'等待游戏返回账号信息';
+  const targetId=gameUidEl.value.trim();
+  detailEl.textContent=who?(who+(targetId?' · ID '+targetId:'')):(loginStarted?'等待游戏返回账号信息':'请填写平台、角色名和角色 ID');
   confirmBtn.disabled=!(controlToken&&data.status==='VERIFYING_ACCOUNT');
+  if(!['CREATED','WAITING_EMULATOR'].includes(data.status)){
+    loginStarted=true;
+    startBtn.disabled=true;
+    platformEl.disabled=true;
+    characterEl.disabled=true;
+    gameUidEl.disabled=true;
+  }
 
   if(data.qrPayload){
     if(/^data:image|^https?:\/\/|^\//.test(data.qrPayload)){
@@ -69,6 +90,26 @@ async function refresh(){
     render(await r.json());
   }catch(e){statusEl.textContent='网络连接异常';}
 }
+
+startBtn.addEventListener('click',async()=>{
+  if(!controlToken)return;
+  const characterName=characterEl.value.trim(),gameUid=gameUidEl.value.trim();
+  if(!characterName||!gameUid){detailEl.textContent='请填写角色名和角色 ID';return;}
+  startBtn.disabled=true;
+  detailEl.textContent='正在启动模拟器登录…';
+  const r=await fetch('/public/login/'+encodeURIComponent(controlToken)+'/start',{
+    method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({platform:platformEl.value,characterName,gameUid})
+  });
+  if(!r.ok){
+    startBtn.disabled=false;
+    detailEl.textContent='启动登录失败，请检查填写信息或模拟器状态';
+    return;
+  }
+  loginStarted=true;
+  platformEl.disabled=true;characterEl.disabled=true;gameUidEl.disabled=true;
+  await refresh();
+});
 
 confirmBtn.addEventListener('click',async()=>{
   if(!controlToken)return;

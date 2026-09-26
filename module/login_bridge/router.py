@@ -12,4 +12,4 @@ login_bridge_app = APIRouter()
 @login_bridge_app.post("/login/detect", response_model=LoginDetectResponse)
 async def detect_login(request: LoginDetectRequest) -> LoginDetectResponse:
     service = LoginDetectService()
-    return await asyncio.to_thread(service.detect, request.config_name)
+    return await asyncio.to_thread(service.detect, request)

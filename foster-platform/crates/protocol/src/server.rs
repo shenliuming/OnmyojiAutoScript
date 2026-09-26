@@ -14,6 +14,9 @@ pub struct StartLoginCommand {
     pub session_no: String,
     pub game_account_id: i64,
     pub emulator_code: String,
+    pub platform: String,
+    pub character_name: String,
+    pub game_uid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -110,7 +110,7 @@ async fn onboarding_creates_pending_subscription_login_and_share_link(
     assert!(result.login_url.contains("#control="));
     assert!(result.service_url.starts_with("/service/"));
     assert!(result.service_url.contains("#control="));
-    assert_eq!(result.login_dispatch_status, "WAITING_EMULATOR");
+    assert_eq!(result.login_dispatch_status, "AWAITING_USER_INPUT");
 
     let subscription: (String, String, String, i32, i32) = sqlx::query_as(
         "SELECT

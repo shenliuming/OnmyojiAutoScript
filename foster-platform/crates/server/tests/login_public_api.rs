@@ -15,7 +15,9 @@ use serde_json::Value;
 use sqlx::MySqlPool;
 use tower::ServiceExt;
 
-async fn seed_fixture(pool: &MySqlPool) -> anyhow::Result<(EnrollmentService, String, String)> {
+async fn seed_fixture(
+    pool: &MySqlPool,
+) -> anyhow::Result<(EnrollmentService, String, String, String)> {
     let host = sqlx::query(
         "INSERT INTO host(host_code, hostname, status)
          VALUES ('host-public', 'host-public', 'ONLINE')",
@@ -50,7 +52,12 @@ async fn seed_fixture(pool: &MySqlPool) -> anyhow::Result<(EnrollmentService, St
         .create_login_session(account_id, Duration::from_secs(900))
         .await?;
 
-    Ok((service, created.session_no, created.public_token))
+    Ok((
+        service,
+        created.session_no,
+        created.public_token,
+        created.control_token,
+    ))
 }
 
 fn test_state(pool: MySqlPool) -> AppState {
@@ -72,7 +79,7 @@ async fn json_body(response: axum::response::Response) -> anyhow::Result<Value> 
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn valid_public_token_returns_login_status(pool: MySqlPool) -> anyhow::Result<()> {
-    let (_service, session_no, public_token) = seed_fixture(&pool).await?;
+    let (_service, session_no, public_token, _control_token) = seed_fixture(&pool).await?;
     let app = build_app(test_state(pool.clone()));
 
     let response = app
@@ -111,7 +118,7 @@ async fn invalid_public_token_returns_404(pool: MySqlPool) -> anyhow::Result<()>
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn expired_login_session_returns_410(pool: MySqlPool) -> anyhow::Result<()> {
-    let (_service, session_no, public_token) = seed_fixture(&pool).await?;
+    let (_service, session_no, public_token, _control_token) = seed_fixture(&pool).await?;
 
     sqlx::query(
         "UPDATE login_session
@@ -137,7 +144,7 @@ async fn expired_login_session_returns_410(pool: MySqlPool) -> anyhow::Result<()
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn expired_qr_payload_is_not_exposed(pool: MySqlPool) -> anyhow::Result<()> {
-    let (_service, session_no, public_token) = seed_fixture(&pool).await?;
+    let (_service, session_no, public_token, _control_token) = seed_fixture(&pool).await?;
 
     sqlx::query(
         "UPDATE login_session
@@ -168,7 +175,7 @@ async fn expired_qr_payload_is_not_exposed(pool: MySqlPool) -> anyhow::Result<()
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn public_status_never_exposes_masked_account_or_uid(pool: MySqlPool) -> anyhow::Result<()> {
-    let (_service, session_no, public_token) = seed_fixture(&pool).await?;
+    let (_service, session_no, public_token, _control_token) = seed_fixture(&pool).await?;
 
     sqlx::query(
         "UPDATE login_session
@@ -206,7 +213,7 @@ async fn public_status_never_exposes_masked_account_or_uid(pool: MySqlPool) -> a
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn sse_immediately_emits_current_login_status(pool: MySqlPool) -> anyhow::Result<()> {
-    let (_service, _session_no, public_token) = seed_fixture(&pool).await?;
+    let (_service, _session_no, public_token, _control_token) = seed_fixture(&pool).await?;
     let app = build_app(test_state(pool));
 
     let response = app
@@ -238,5 +245,74 @@ async fn sse_immediately_emits_current_login_status(pool: MySqlPool) -> anyhow::
     assert!(text.contains("event: login_status"));
     assert!(text.contains("\"status\":\"CREATED\""));
 
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn start_login_persists_user_target_before_dispatch(pool: MySqlPool) -> anyhow::Result<()> {
+    let (_service, session_no, _public_token, control_token) = seed_fixture(&pool).await?;
+    let app = build_app(test_state(pool.clone()));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/public/login/{control_token}/start"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "platform": "ANDROID",
+                        "characterName": "角色A",
+                        "gameUid": "10001"
+                    })
+                    .to_string(),
+                ))?,
+        )
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await?;
+    assert_eq!(body["status"], "WAITING_EMULATOR");
+
+    let target: (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT a.platform, a.character_name, a.game_uid
+         FROM game_account a
+         JOIN login_session ls ON ls.game_account_id = a.id
+         WHERE ls.session_no = ?",
+    )
+    .bind(&session_no)
+    .fetch_one(&pool)
+    .await?;
+
+    assert_eq!(target.0.as_deref(), Some("ANDROID"));
+    assert_eq!(target.1.as_deref(), Some("角色A"));
+    assert_eq!(target.2.as_deref(), Some("10001"));
+
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn start_login_rejects_unknown_platform(pool: MySqlPool) -> anyhow::Result<()> {
+    let (_service, _session_no, _public_token, control_token) = seed_fixture(&pool).await?;
+    let app = build_app(test_state(pool));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/public/login/{control_token}/start"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "platform": "WINDOWS",
+                        "characterName": "角色A",
+                        "gameUid": "10001"
+                    })
+                    .to_string(),
+                ))?,
+        )
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
     Ok(())
 }

@@ -240,6 +240,8 @@ pub struct LockedBinding {
 pub struct LockedGameAccount {
     pub id: i64,
     pub active_emulator_id: Option<i64>,
+    pub character_name: Option<String>,
+    pub game_uid: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -296,7 +298,7 @@ pub async fn lock_game_account(
     game_account_id: i64,
 ) -> Result<Option<LockedGameAccount>, sqlx::Error> {
     sqlx::query_as::<_, LockedGameAccount>(
-        "SELECT id, active_emulator_id
+        "SELECT id, active_emulator_id, character_name, game_uid
          FROM game_account
          WHERE id = ?
          FOR UPDATE",
@@ -363,6 +365,34 @@ pub async fn insert_enrollment_identity(
     Ok(())
 }
 
+pub async fn insert_user_confirmed_uid(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+    game_uid: &str,
+    normalized_value: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO game_account_identity(
+            game_account_id,
+            identity_type,
+            identity_value,
+            normalized_value,
+            source,
+            confidence,
+            enabled,
+            last_seen_at
+         )
+         VALUES (?, 'GAME_UID', ?, ?, 'USER_CONFIRMED', 100, 1, NOW(3))",
+    )
+    .bind(game_account_id)
+    .bind(game_uid)
+    .bind(normalized_value)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn activate_pending_binding(
     tx: &mut Transaction<'_, MySql>,
     binding_id: i64,
@@ -380,6 +410,30 @@ pub async fn activate_pending_binding(
     .await?;
 
     Ok(result.rows_affected() == 1)
+}
+
+pub async fn update_game_account_login_target(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+    platform: &str,
+    character_name: &str,
+    game_uid: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE game_account
+         SET platform = ?,
+             character_name = ?,
+             game_uid = ?
+         WHERE id = ?",
+    )
+    .bind(platform)
+    .bind(character_name)
+    .bind(game_uid)
+    .bind(game_account_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
 }
 
 pub async fn activate_game_account(
@@ -518,6 +572,9 @@ pub struct LoginDispatchTarget {
     pub status: String,
     pub host_id: i64,
     pub emulator_code: String,
+    pub platform: Option<String>,
+    pub character_name: Option<String>,
+    pub game_uid: Option<String>,
 }
 
 pub async fn lock_login_dispatch_target(
@@ -531,9 +588,13 @@ pub async fn lock_login_dispatch_target(
             ls.game_account_id,
             ls.status,
             e.host_id,
-            e.emulator_code
+            e.emulator_code,
+            a.platform,
+            a.character_name,
+            a.game_uid
          FROM login_session ls
          JOIN emulator_instance e ON e.id = ls.emulator_id
+         JOIN game_account a ON a.id = ls.game_account_id
          WHERE ls.session_no = ?
          FOR UPDATE",
     )

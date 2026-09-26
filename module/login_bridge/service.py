@@ -5,7 +5,7 @@ from module.config.config import Config
 from module.device.device import Device
 from tasks.Component.SwitchAccount.login_account import LoginAccount
 
-from module.login_bridge.models import LoginDetectResponse
+from module.login_bridge.models import LoginDetectRequest, LoginDetectResponse
 
 
 def _clean_text(value) -> Optional[str]:
@@ -20,12 +20,14 @@ def _clean_character(value: str) -> str:
 
 
 class LoginDetectService:
-    def detect(self, config_name: str) -> LoginDetectResponse:
+    def detect(self, request: LoginDetectRequest) -> LoginDetectResponse:
         try:
-            config = Config(config_name=config_name)
+            config = Config(config_name=request.config_name)
             device = Device(config=config)
             detector = LoginAccount(config=config, device=device)
 
+            detector.screenshot()
+            self._select_platform_if_needed(detector, request.platform)
             detector.screenshot()
             self._normalize_login_form(detector)
             detector.screenshot()
@@ -37,38 +39,63 @@ class LoginDetectService:
                 )
 
             masked_account = self._detect_account(detector)
-            server_name = _clean_text(detector.get_svr_name())
-            characters = self._detect_characters(detector)
+            detector.screenshot()
 
-            if len(characters) > 1:
+            if not detector.switch_character(request.character_name):
                 return LoginDetectResponse(
                     ready=False,
-                    ambiguous=True,
-                    message="multiple game characters detected; refusing automatic selection",
+                    message=f"waiting for target character: {request.character_name}",
                     masked_account=masked_account,
-                    server_name=server_name,
                 )
 
-            if len(characters) != 1 or not server_name:
+            detector.screenshot()
+            server_name = _clean_text(detector.get_svr_name())
+            if not server_name:
                 return LoginDetectResponse(
                     ready=False,
-                    message="waiting for a unique character and server",
+                    message="target character selected but server name is not ready",
                     masked_account=masked_account,
-                    server_name=server_name,
+                    character_name=request.character_name,
                 )
 
             return LoginDetectResponse(
                 ready=True,
-                message="game identity detected",
+                message="target game identity detected",
                 masked_account=masked_account,
-                character_name=characters[0],
+                character_name=request.character_name,
                 server_name=server_name,
+                game_uid=None,
             )
         except Exception as error:
             return LoginDetectResponse(
                 ready=False,
                 message=f"login identity detection not ready: {error}",
             )
+
+    def _select_platform_if_needed(self, detector: LoginAccount, platform: str) -> None:
+        platform = (platform or "").strip().upper()
+        detector.screenshot()
+
+        if not (
+            detector.appear(detector.I_SA_LOGIN_FORM_APPLE)
+            or detector.appear(detector.I_SA_LOGIN_FORM_ANDROID)
+        ):
+            return
+
+        if platform == "ANDROID":
+            detector.ui_click_until_disappear(
+                detector.I_SA_LOGIN_FORM_ANDROID,
+                interval=0.7,
+            )
+        elif platform == "IOS":
+            detector.ui_click_until_disappear(
+                detector.I_SA_LOGIN_FORM_APPLE,
+                interval=0.7,
+            )
+        else:
+            raise ValueError(f"unsupported login platform: {platform}")
+
+        time.sleep(0.8)
 
     def _normalize_login_form(self, detector: LoginAccount) -> None:
         if detector.appear(detector.I_SA_CHECK_SELECT_SVR_1) or detector.appear(

@@ -5,6 +5,8 @@ from pydantic import BaseModel
 
 class LoginDetectRequest(BaseModel):
     config_name: str
+    platform: str
+    character_name: str
 
 
 class LoginDetectResponse(BaseModel):

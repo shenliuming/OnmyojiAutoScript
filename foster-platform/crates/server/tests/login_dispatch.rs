@@ -39,9 +39,9 @@ async fn seed_fixture(pool: &MySqlPool, suffix: &str) -> anyhow::Result<Fixture>
 
     let account = sqlx::query(
         "INSERT INTO game_account(
-            customer_id, login_status, verify_status
+            customer_id, platform, character_name, game_uid, login_status, verify_status
          )
-         VALUES (?, 'PENDING', 'PENDING')",
+         VALUES (?, 'ANDROID', '角色A', '10001', 'PENDING', 'PENDING')",
     )
     .bind(10000_i64 + host_id)
     .execute(pool)
@@ -108,6 +108,9 @@ async fn online_host_receives_start_login(pool: MySqlPool) -> anyhow::Result<()>
             assert_eq!(command.session_no, fixture.session_no);
             assert_eq!(command.game_account_id, fixture.account_id);
             assert!(command.emulator_code.starts_with("emu-dispatch-online"));
+            assert_eq!(command.platform, "ANDROID");
+            assert_eq!(command.character_name, "角色A");
+            assert_eq!(command.game_uid, "10001");
         }
         other => panic!("expected START_LOGIN, got {other:?}"),
     }

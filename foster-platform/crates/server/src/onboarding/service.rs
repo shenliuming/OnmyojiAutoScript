@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::{
     agent_gateway::registry::AgentRegistry,
     control_plane::AllocationError,
-    enrollment::{DispatchLoginResult, EnrollmentError, EnrollmentService},
+    enrollment::{EnrollmentError, EnrollmentService},
     public_portal::{PublicPortalError, PublicPortalService},
 };
 
@@ -136,9 +136,7 @@ impl OnboardingService {
             .rotate_share_link(subscription_id, Some(service_end_at))
             .await?;
 
-        let dispatch = EnrollmentService::new(self.pool.clone())
-            .dispatch_login_session(&login.session_no, registry)
-            .await?;
+        let _ = registry;
 
         Ok(OnboardCustomerResult {
             subscription_no: subscription_no.to_string(),
@@ -150,7 +148,7 @@ impl OnboardingService {
                 "/service/{}#control={}",
                 share.public_token, share.control_token
             ),
-            login_dispatch_status: dispatch_status_name(dispatch).to_string(),
+            login_dispatch_status: "AWAITING_USER_INPUT".to_string(),
         })
     }
 }
@@ -159,13 +157,5 @@ fn map_enrollment_error(error: EnrollmentError) -> OnboardingError {
     match error {
         EnrollmentError::Allocation(AllocationError::NoCapacity) => OnboardingError::NoCapacity,
         other => OnboardingError::Enrollment(other),
-    }
-}
-
-fn dispatch_status_name(status: DispatchLoginResult) -> &'static str {
-    match status {
-        DispatchLoginResult::Dispatched => "DISPATCHED",
-        DispatchLoginResult::WaitingEmulator => "WAITING_EMULATOR",
-        DispatchLoginResult::AlreadyDispatched => "ALREADY_DISPATCHED",
     }
 }

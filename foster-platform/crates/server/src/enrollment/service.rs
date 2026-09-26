@@ -23,11 +23,12 @@ use super::{
         NewLoginSession, TrustedIdentityRow, activate_game_account, activate_pending_binding,
         activate_pending_subscriptions, cancel_login_session_row, complete_login_session,
         find_expired_login_session_ids, insert_enrollment_identity, insert_login_session,
-        load_trusted_identities, lock_binding, lock_game_account, lock_login_dispatch_target,
-        lock_login_session_by_control_hash, lock_login_session_by_id, mark_login_failed,
-        mark_login_identity_detected, mark_login_preparing, mark_login_preparing_after_dispatch,
-        mark_login_qr_expired, mark_login_qr_ready, mark_login_waiting_emulator,
-        release_pending_binding, release_pending_binding_tx,
+        insert_user_confirmed_uid, load_trusted_identities, lock_binding, lock_game_account,
+        lock_login_dispatch_target, lock_login_session_by_control_hash, lock_login_session_by_id,
+        mark_login_failed, mark_login_identity_detected, mark_login_preparing,
+        mark_login_preparing_after_dispatch, mark_login_qr_expired, mark_login_qr_ready,
+        mark_login_waiting_emulator, release_pending_binding, release_pending_binding_tx,
+        update_game_account_login_target,
     },
 };
 
@@ -51,6 +52,8 @@ pub enum EnrollmentError {
     BindingMismatch,
     #[error("game account is already active on another emulator")]
     AccountBindingConflict,
+    #[error("platform, character name and game uid are required before login starts")]
+    InvalidLoginTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,10 +163,26 @@ impl EnrollmentService {
             }
         }
 
+        let platform = target
+            .platform
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(EnrollmentError::InvalidLoginTarget)?;
+        let character_name = target
+            .character_name
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(EnrollmentError::InvalidLoginTarget)?;
+        let game_uid = target
+            .game_uid
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(EnrollmentError::InvalidLoginTarget)?;
+
         let command = ServerCommand::StartLogin(StartLoginCommand {
             session_no: target.session_no.clone(),
             game_account_id: target.game_account_id,
             emulator_code: target.emulator_code.clone(),
+            platform,
+            character_name,
+            game_uid,
         });
 
         let delivered = tokio::time::timeout(
@@ -190,6 +209,54 @@ impl EnrollmentService {
                 Ok(DispatchLoginResult::WaitingEmulator)
             }
         }
+    }
+
+    pub async fn start_login_with_target(
+        &self,
+        control_token: &str,
+        platform: &str,
+        character_name: &str,
+        game_uid: &str,
+        registry: &AgentRegistry,
+    ) -> Result<DispatchLoginResult, EnrollmentError> {
+        let platform = platform.trim().to_uppercase();
+        let character_name = character_name.trim();
+        let game_uid = game_uid.trim();
+
+        if !matches!(platform.as_str(), "ANDROID" | "IOS")
+            || character_name.is_empty()
+            || game_uid.is_empty()
+        {
+            return Err(EnrollmentError::InvalidLoginTarget);
+        }
+
+        let control_token_hash = sha256_hex(control_token);
+        let mut tx = self.pool.begin().await?;
+        let session = lock_login_session_by_control_hash(&mut tx, &control_token_hash)
+            .await?
+            .ok_or(EnrollmentError::LoginSessionNotFound)?;
+
+        if session.expires_at <= Utc::now().naive_utc() {
+            return Err(EnrollmentError::LoginSessionExpired);
+        }
+
+        if !matches!(session.status.as_str(), "CREATED" | "WAITING_EMULATOR") {
+            tx.commit().await?;
+            return Ok(DispatchLoginResult::AlreadyDispatched);
+        }
+
+        update_game_account_login_target(
+            &mut tx,
+            session.game_account_id,
+            &platform,
+            character_name,
+            game_uid,
+        )
+        .await?;
+        let session_no = session.session_no.clone();
+        tx.commit().await?;
+
+        self.dispatch_login_session(&session_no, registry).await
     }
 
     pub async fn expire_login_sessions(&self) -> Result<usize, EnrollmentError> {
@@ -303,6 +370,15 @@ impl EnrollmentService {
             ocr_aliases: Vec::new(),
         };
 
+        if account
+            .character_name
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .is_some_and(|expected| detected.character_name.as_deref() != Some(expected))
+        {
+            return Err(EnrollmentError::IdentityRejected);
+        }
+
         let trusted_rows = load_trusted_identities(&mut tx, session.game_account_id).await?;
 
         if trusted_rows.is_empty() {
@@ -324,6 +400,15 @@ impl EnrollmentService {
             ) {
                 return Err(EnrollmentError::IdentityRejected);
             }
+        }
+
+        if let Some(game_uid) = account
+            .game_uid
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            let normalized = normalize_identity(IdentityType::GameUid, game_uid);
+            insert_user_confirmed_uid(&mut tx, account.id, game_uid, &normalized).await?;
         }
 
         if !activate_pending_binding(&mut tx, binding.id).await? {
@@ -416,9 +501,7 @@ fn sha256_hex(value: &str) -> String {
 }
 
 fn first_enrollment_has_strong_identity(detected: &DetectedIdentity) -> bool {
-    has_text(detected.game_uid.as_deref())
-        || (has_text(detected.character_name.as_deref())
-            && has_text(detected.server_name.as_deref()))
+    has_text(detected.character_name.as_deref()) && has_text(detected.server_name.as_deref())
 }
 
 fn has_text(value: Option<&str>) -> bool {

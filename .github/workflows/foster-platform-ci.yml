@@ -2,6 +2,17 @@ name: Foster Platform CI
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - feat/foster-platform
+    paths:
+      - "foster-platform/**"
+      - "module/login_bridge/**"
+      - "module/foster_bridge/**"
+      - "tasks/Component/SwitchAccount/**"
+      - "tasks/KekkaiUtilize/**"
+      - ".github/workflows/foster-platform-ci.yml"
+      - ".github/workflows/foster-agent-windows-package.yml"
   push:
     branches:
       - feat/foster-platform
