@@ -255,13 +255,26 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 let outbox = self.outbox.clone();
                 tokio::spawn(async move {
                     let session_no = command.session_no.clone();
-                    if let Err(error) = executor.select_identity(&command).await {
-                        let _ = executor.cancel(&session_no).await;
-                        outbox.push(AgentEvent::LoginFailed(LoginFailed {
-                            session_no,
-                            code: "LOGIN_IDENTITY_SELECTION_FAILED".to_string(),
-                            message: error.to_string(),
-                        }));
+                    match executor.select_identity(&command).await {
+                        Ok(identity) => {
+                            outbox.push(AgentEvent::LoginIdentityDetected(
+                                LoginIdentityDetected {
+                                    session_no,
+                                    masked_account: identity.masked_account,
+                                    character_name: identity.character_name,
+                                    server_name: identity.server_name,
+                                    game_uid: None,
+                                },
+                            ));
+                        }
+                        Err(error) => {
+                            let _ = executor.cancel(&session_no).await;
+                            outbox.push(AgentEvent::LoginFailed(LoginFailed {
+                                session_no,
+                                code: "LOGIN_IDENTITY_SELECTION_FAILED".to_string(),
+                                message: error.to_string(),
+                            }));
+                        }
                     }
                 });
             }
