@@ -169,16 +169,20 @@ pub async fn mark_login_identity_detected(
              ls.detected_game_uid = ?,
              ls.identity_verified = (
                  ls.expected_server_name IS NOT NULL
+                 AND ls.expected_character_name IS NOT NULL
+                 AND ls.expected_game_uid IS NOT NULL
                  AND BINARY ls.expected_server_name = BINARY ?
                  AND BINARY ls.expected_character_name = BINARY ?
-                 AND BINARY ls.expected_game_uid = BINARY ?
              ),
              ls.identity_verify_reason = CASE
-                 WHEN ls.expected_server_name IS NULL THEN '请先填写区服、角色名和游戏 UID'
+                 WHEN ls.expected_server_name IS NULL
+                   OR ls.expected_character_name IS NULL
+                   OR ls.expected_game_uid IS NULL
+                   THEN '请先填写区服、角色名和游戏 UID'
                  WHEN BINARY ls.expected_server_name = BINARY ?
                    AND BINARY ls.expected_character_name = BINARY ?
-                   AND BINARY ls.expected_game_uid = BINARY ? THEN '已与游戏识别结果核对一致'
-                 ELSE '填写信息与游戏识别结果不一致，请检查后重新提交'
+                   THEN '角色名和区服已与游戏识别结果核对一致'
+                 ELSE '填写的角色名或区服与游戏识别结果不一致，请检查后重新提交'
              END
          WHERE ls.session_no = ?
            AND e.host_id = ?
@@ -190,10 +194,8 @@ pub async fn mark_login_identity_detected(
     .bind(game_uid)
     .bind(server_name)
     .bind(character_name)
-    .bind(game_uid)
     .bind(server_name)
     .bind(character_name)
-    .bind(game_uid)
     .bind(session_no)
     .bind(host_id)
     .execute(pool)
@@ -268,6 +270,7 @@ pub struct LockedLoginSession {
     pub detected_character_name: Option<String>,
     pub detected_server_name: Option<String>,
     pub detected_game_uid: Option<String>,
+    pub expected_game_uid: Option<String>,
     pub identity_verified: bool,
 }
 
@@ -310,6 +313,7 @@ pub async fn lock_login_session_by_control_hash(
             detected_character_name,
             detected_server_name,
             detected_game_uid,
+            expected_game_uid,
             identity_verified
          FROM login_session
          WHERE control_token_hash = ?
@@ -430,6 +434,46 @@ pub async fn insert_enrollment_identity(
     .bind(game_account_id)
     .bind(identity_type)
     .bind(identity_value)
+    .bind(normalized_value)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn replace_user_confirmed_game_uid(
+    tx: &mut Transaction<'_, MySql>,
+    game_account_id: i64,
+    game_uid: &str,
+    normalized_value: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE game_account_identity
+         SET enabled = 0
+         WHERE game_account_id = ?
+           AND identity_type = 'GAME_UID'
+           AND source = 'USER_CONFIRMED'
+           AND enabled = 1",
+    )
+    .bind(game_account_id)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO game_account_identity(
+            game_account_id,
+            identity_type,
+            identity_value,
+            normalized_value,
+            source,
+            confidence,
+            enabled,
+            last_seen_at
+         )
+         VALUES (?, 'GAME_UID', ?, ?, 'USER_CONFIRMED', 100, 1, NOW(3))",
+    )
+    .bind(game_account_id)
+    .bind(game_uid)
     .bind(normalized_value)
     .execute(&mut **tx)
     .await?;
