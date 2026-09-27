@@ -29,6 +29,7 @@ use super::{
         load_trusted_identities, lock_binding, lock_game_account, lock_login_dispatch_target,
         lock_login_session_by_control_hash, lock_login_session_by_id, mark_login_failed,
         mark_login_identity_detected, mark_login_platform_selected, mark_login_preparing,
+        mark_login_selection_rejected,
         mark_login_preparing_after_dispatch, mark_login_qr_expired, mark_login_qr_ready,
         mark_login_waiting_emulator, release_pending_binding, release_pending_binding_tx,
         replace_user_confirmed_game_uid, save_expected_login_identity,
@@ -121,6 +122,15 @@ impl EnrollmentService {
                     event.character_name.as_deref(),
                     event.server_name.as_deref(),
                     event.game_uid.as_deref(),
+                )
+                .await?;
+            }
+            AgentEvent::LoginSelectionRejected(event) => {
+                mark_login_selection_rejected(
+                    &self.pool,
+                    host_id,
+                    &event.session_no,
+                    &event.message,
                 )
                 .await?;
             }
