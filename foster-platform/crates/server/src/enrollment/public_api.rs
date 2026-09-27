@@ -155,6 +155,7 @@ pub async fn submit_login_identity(
             &request.server_name,
             &request.character_name,
             &request.game_uid,
+            &state.registry,
         )
         .await
         .map_err(activation_status)?;
