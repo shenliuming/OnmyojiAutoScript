@@ -67,7 +67,7 @@ export function LoginPage() {
   async function submitIdentity(identity: Identity) {
     if (!controlToken || identityBusy) return
     setIdentityBusy(true)
-    setDetail('已提交账号信息，等待 Agent 截图/OCR 校验…')
+    setDetail('已提交账号信息，正在切换到指定角色并校验…')
     try {
       const response = await apiFetch(`/public/login/${encodeURIComponent(controlToken)}/identity`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(identity),
