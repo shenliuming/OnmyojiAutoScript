@@ -23,7 +23,7 @@ describe('application routes', () => {
   it('shows the customer login page at /login/:token', () => {
     at('/login/customer-token')
     expect(screen.getByRole('heading', { name: '游戏账号登录' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '确认这是我的账号' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '确认这是我的角色' })).toBeDisabled()
   })
 
   it('shows the customer service page at /service/:token', () => {
