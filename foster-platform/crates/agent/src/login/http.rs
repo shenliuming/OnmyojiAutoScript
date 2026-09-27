@@ -1,8 +1,14 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use foster_protocol::StartLoginCommand;
+use foster_protocol::{
+    LoginPlatform, SelectLoginIdentityCommand, SelectLoginPlatformCommand, StartLoginCommand,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -24,6 +30,7 @@ where
     identity_timeout: Duration,
     poll_interval: Duration,
     cancelled: Arc<Mutex<HashSet<String>>>,
+    resolved_identities: Arc<Mutex<HashMap<String, LoginIdentity>>>,
 }
 
 impl<R> HttpOasLoginExecutor<R>
@@ -46,6 +53,7 @@ where
             identity_timeout,
             poll_interval,
             cancelled: Arc::new(Mutex::new(HashSet::new())),
+            resolved_identities: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -68,6 +76,19 @@ where
 #[derive(Debug, Serialize)]
 struct DetectLoginRequest {
     config_name: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SelectPlatformRequest {
+    config_name: String,
+    platform: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct SelectIdentityRequest {
+    config_name: String,
+    server_name: String,
+    character_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -152,6 +173,15 @@ where
                 return Err(LoginExecutorError::Message("login cancelled".into()));
             }
 
+            if let Some(identity) = self
+                .resolved_identities
+                .lock()
+                .await
+                .remove(&command.session_no)
+            {
+                return Ok(identity);
+            }
+
             if tokio::time::Instant::now() >= deadline {
                 return Err(LoginExecutorError::Message(
                     "timed out waiting for game identity after QR scan".into(),
@@ -193,8 +223,98 @@ where
         }
     }
 
+    async fn select_platform(
+        &self,
+        command: &SelectLoginPlatformCommand,
+    ) -> Result<(), LoginExecutorError> {
+        let config = self
+            .driver
+            .instance_config(&command.emulator_code)
+            .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
+        let platform = match command.platform {
+            LoginPlatform::Android => "ANDROID",
+            LoginPlatform::Ios => "IOS",
+        };
+        let response = self
+            .client
+            .post(format!("{}/login/platform", self.base_url))
+            .json(&SelectPlatformRequest {
+                config_name: config.oas_config_name.clone(),
+                platform,
+            })
+            .send()
+            .await
+            .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(LoginExecutorError::Message(format!(
+                "OAS platform selection failed with HTTP {}",
+                response.status()
+            )));
+        }
+
+        let result = response
+            .json::<DetectLoginResponse>()
+            .await
+            .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
+        if !result.ready {
+            return Err(LoginExecutorError::Message(result.message));
+        }
+
+        Ok(())
+    }
+
+    async fn select_identity(
+        &self,
+        command: &SelectLoginIdentityCommand,
+    ) -> Result<(), LoginExecutorError> {
+        let config = self
+            .driver
+            .instance_config(&command.emulator_code)
+            .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
+        let response = self
+            .client
+            .post(format!("{}/login/select-identity", self.base_url))
+            .json(&SelectIdentityRequest {
+                config_name: config.oas_config_name.clone(),
+                server_name: command.server_name.clone(),
+                character_name: command.character_name.clone(),
+            })
+            .send()
+            .await
+            .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(LoginExecutorError::Message(format!(
+                "OAS identity selection failed with HTTP {}",
+                response.status()
+            )));
+        }
+
+        let detected = response
+            .json::<DetectLoginResponse>()
+            .await
+            .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
+        if !detected.ready {
+            return Err(LoginExecutorError::Message(detected.message));
+        }
+
+        self.resolved_identities.lock().await.insert(
+            command.session_no.clone(),
+            LoginIdentity {
+                masked_account: detected.masked_account,
+                character_name: detected.character_name,
+                server_name: detected.server_name,
+                game_uid: None,
+            },
+        );
+
+        Ok(())
+    }
+
     async fn cancel(&self, session_no: &str) -> Result<(), LoginExecutorError> {
         self.cancelled.lock().await.insert(session_no.to_string());
+        self.resolved_identities.lock().await.remove(session_no);
         Ok(())
     }
 }
