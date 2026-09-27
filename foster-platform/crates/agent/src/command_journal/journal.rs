@@ -223,6 +223,28 @@ impl CommandJournal {
         persist_inner(&inner)
     }
 
+    pub fn finish_login(
+        &self,
+        session_no: &str,
+        terminal_event: AgentEvent,
+    ) -> Result<(), CommandJournalError> {
+        let execution_key = login_execution_key(session_no);
+        let mut inner = self.lock()?;
+
+        if let Some(entry) = inner
+            .entries
+            .iter_mut()
+            .find(|entry| entry.execution_key == execution_key)
+        {
+            entry.status = AgentCommandStatus::Finished;
+            entry.updated_at = Utc::now();
+            entry.terminal_event = Some(terminal_event);
+        }
+
+        prune_entries(&mut inner);
+        persist_inner(&inner)
+    }
+
     pub fn finish(
         &self,
         command_id: Uuid,
