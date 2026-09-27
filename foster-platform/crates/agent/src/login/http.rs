@@ -31,6 +31,7 @@ where
     poll_interval: Duration,
     cancelled: Arc<Mutex<HashSet<String>>>,
     resolved_identities: Arc<Mutex<HashMap<String, LoginIdentity>>>,
+    explicit_identity_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
 impl<R> HttpOasLoginExecutor<R>
@@ -54,6 +55,7 @@ where
             poll_interval,
             cancelled: Arc::new(Mutex::new(HashSet::new())),
             resolved_identities: Arc::new(Mutex::new(HashMap::new())),
+            explicit_identity_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -182,6 +184,16 @@ where
                 return Ok(identity);
             }
 
+            if self
+                .explicit_identity_sessions
+                .lock()
+                .await
+                .contains(&command.session_no)
+            {
+                tokio::time::sleep(self.poll_interval).await;
+                continue;
+            }
+
             if tokio::time::Instant::now() >= deadline {
                 return Err(LoginExecutorError::Message(
                     "timed out waiting for game identity after QR scan".into(),
@@ -261,6 +273,11 @@ where
             return Err(LoginExecutorError::Message(result.message));
         }
 
+        self.explicit_identity_sessions
+            .lock()
+            .await
+            .insert(command.session_no.clone());
+
         Ok(())
     }
 
@@ -316,6 +333,7 @@ where
     async fn cancel(&self, session_no: &str) -> Result<(), LoginExecutorError> {
         self.cancelled.lock().await.insert(session_no.to_string());
         self.resolved_identities.lock().await.remove(session_no);
+        self.explicit_identity_sessions.lock().await.remove(session_no);
         Ok(())
     }
 }
