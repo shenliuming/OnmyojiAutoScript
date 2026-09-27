@@ -1,7 +1,7 @@
 use chrono::{TimeZone, Utc};
 use foster_protocol::{
     AgentEnvelope, AgentEvent, LoginIdentityDetected, LoginQrReady, PROTOCOL_VERSION,
-    ServerCommand, ServerEnvelope, StartLoginCommand,
+    SelectLoginIdentityCommand, ServerCommand, ServerEnvelope, StartLoginCommand,
 };
 use uuid::Uuid;
 
@@ -75,4 +75,27 @@ fn login_identity_detected_roundtrips_optional_fields() {
                 && value.server_name.as_deref() == Some("春之樱")
                 && value.game_uid.is_none()
     ));
+}
+
+
+#[test]
+fn select_login_identity_serializes_with_stable_tag() {
+    let envelope = ServerEnvelope {
+        protocol_version: PROTOCOL_VERSION,
+        command_id: Uuid::nil(),
+        sent_at: Utc.timestamp_opt(0, 0).single().unwrap(),
+        payload: ServerCommand::SelectLoginIdentity(SelectLoginIdentityCommand {
+            session_no: "LOGIN-001".into(),
+            emulator_code: "emu-01".into(),
+            server_name: "春之樱".into(),
+            character_name: "角色A".into(),
+        }),
+    };
+
+    let value = serde_json::to_value(envelope).unwrap();
+
+    assert_eq!(value["payload"]["type"], "SELECT_LOGIN_IDENTITY");
+    assert_eq!(value["payload"]["data"]["session_no"], "LOGIN-001");
+    assert_eq!(value["payload"]["data"]["character_name"], "角色A");
+    assert_eq!(value["payload"]["data"]["server_name"], "春之樱");
 }
