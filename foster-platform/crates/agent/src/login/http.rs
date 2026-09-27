@@ -307,6 +307,10 @@ where
             server_name: detected.server_name,
             game_uid: None,
         };
+        self.explicit_identity_sessions
+            .lock()
+            .await
+            .remove(&command.session_no);
         Ok(identity)
     }
 
