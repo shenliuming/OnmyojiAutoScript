@@ -251,6 +251,9 @@ fn command() -> StartLoginCommand {
         session_no: "LOGIN-PREPARE".into(),
         game_account_id: 1001,
         emulator_code: "emu-login".into(),
+        platform: foster_protocol::LoginPlatform::Android,
+        character_name: "角色A".into(),
+        game_uid: "10001".into(),
     }
 }
 
