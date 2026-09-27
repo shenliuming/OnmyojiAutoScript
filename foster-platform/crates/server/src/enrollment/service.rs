@@ -383,7 +383,7 @@ impl EnrollmentService {
         if !trusted_uid_values.is_empty()
             && !trusted_uid_values
                 .iter()
-                .any(|value| *value == normalized_confirmed_uid)
+                .any(|value| *value == normalized_confirmed_uid.as_str())
         {
             return Err(EnrollmentError::IdentityRejected);
         }
