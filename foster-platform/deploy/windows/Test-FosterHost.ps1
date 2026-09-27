@@ -147,8 +147,11 @@ else {
         }
 
         try {
-            # Network serials need an explicit (idempotent) connect first.
-            & $adbPath connect $serial 2>&1 | Out-Null
+            # Only TCP endpoints need adb connect. LDPlayer serials such as
+            # emulator-5554 are already registered and must be addressed directly.
+            if ($serial.Contains(":")) {
+                & $adbPath connect $serial 2>&1 | Out-Null
+            }
             $state = (& $adbPath -s $serial get-state 2>&1 | Out-String).Trim()
             if ($LASTEXITCODE -eq 0 -and $state -eq "device") {
                 Add-Success "$code ADB online ($serial), OAS config=$oasConfig"
@@ -163,27 +166,45 @@ else {
     }
 }
 
-$mumuCliPath = [Environment]::GetEnvironmentVariable("FOSTER_MUMU_CLI_PATH", "Process")
-if ([string]::IsNullOrWhiteSpace($mumuCliPath)) {
-    $mumuCliPath = "C:\Program Files\Netease\MuMu\nx_main\mumu-cli.exe"
-}
-if (Test-Path -LiteralPath $mumuCliPath) {
-    Add-Success "MuMu CLI found: $mumuCliPath"
-    try {
-        $null = (& $mumuCliPath info --vmindex all 2>&1 | Out-String)
-        if ($LASTEXITCODE -eq 0) {
-            Add-Success "MuMu CLI info responds"
-        }
-        else {
-            Add-Failure "MuMu CLI info failed with exit code $LASTEXITCODE"
-        }
-    }
-    catch {
-        Add-Failure "MuMu CLI info failed: $($_.Exception.Message)"
-    }
+$ldConsolePaths = @(
+    $emulators |
+        ForEach-Object { [string]$_.startProgram } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique
+)
+
+if ($ldConsolePaths.Count -eq 0) {
+    Add-Failure "No LDPlayer startProgram configured in FOSTER_EMULATORS_JSON"
 }
 else {
-    Add-Failure "MuMu CLI not found: $mumuCliPath (set FOSTER_MUMU_CLI_PATH)"
+    foreach ($ldConsolePath in $ldConsolePaths) {
+        if (-not (Test-Path -LiteralPath $ldConsolePath)) {
+            Add-Failure "LDPlayer ldconsole.exe not found: $ldConsolePath"
+            continue
+        }
+
+        Add-Success "LDPlayer CLI found: $ldConsolePath"
+        try {
+            $listRaw = (& $ldConsolePath list2 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0) {
+                Add-Failure "LDPlayer list2 failed with exit code $LASTEXITCODE"
+            }
+            elseif ([string]::IsNullOrWhiteSpace($listRaw)) {
+                Add-Failure "LDPlayer list2 returned no instances"
+            }
+            else {
+                Add-Success "LDPlayer list2 responds"
+                $listRaw -split "\r?\n" | ForEach-Object {
+                    if (-not [string]::IsNullOrWhiteSpace($_)) {
+                        Write-Host "  $_"
+                    }
+                }
+            }
+        }
+        catch {
+            Add-Failure "LDPlayer list2 failed: $($_.Exception.Message)"
+        }
+    }
 }
 
 if ($failures.Count -gt 0) {
