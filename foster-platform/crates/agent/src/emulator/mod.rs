@@ -1,9 +1,11 @@
 mod driver;
 mod fake;
 mod generic_adb;
+mod lease;
 
 pub use driver::{EmulatorDriver, EmulatorDriverError};
 pub use fake::FakeEmulatorDriver;
+pub use lease::{EmulatorLease, EmulatorLeaseError, EmulatorLeaseManager};
 pub use generic_adb::{
     CommandOutput, CommandRunner, EmulatorInstanceConfig, GenericAdbEmulatorDriver,
     SystemCommandRunner, capture_screenshot, ensure_adb_connected, launch_package,
