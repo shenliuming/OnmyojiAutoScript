@@ -15,3 +15,14 @@ class LoginDetectResponse(BaseModel):
     character_name: Optional[str] = None
     server_name: Optional[str] = None
     game_uid: Optional[str] = None
+
+
+class LoginPlatformRequest(BaseModel):
+    config_name: str
+    platform: str
+
+
+class LoginSelectIdentityRequest(BaseModel):
+    config_name: str
+    server_name: str
+    character_name: str
