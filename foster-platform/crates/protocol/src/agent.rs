@@ -104,6 +104,13 @@ pub struct LoginIdentityDetected {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginSelectionRejected {
+    pub session_no: String,
+    pub action: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginFailed {
     pub session_no: String,
     pub code: String,
@@ -166,6 +173,7 @@ pub enum AgentEvent {
     LoginQrExpired(LoginQrExpired),
     LoginPlatformSelected(LoginPlatformSelected),
     LoginIdentityDetected(LoginIdentityDetected),
+    LoginSelectionRejected(LoginSelectionRejected),
     LoginFailed(LoginFailed),
     FosterStageChanged(FosterStageChanged),
     FosterSucceeded(FosterSucceeded),
