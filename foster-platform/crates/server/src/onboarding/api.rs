@@ -82,7 +82,8 @@ fn status_code(error: OnboardingError) -> StatusCode {
         OnboardingError::Enrollment(error) => match error {
             crate::enrollment::EnrollmentError::LoginSessionNotFound => StatusCode::NOT_FOUND,
             crate::enrollment::EnrollmentError::LoginSessionExpired => StatusCode::GONE,
-            crate::enrollment::EnrollmentError::InvalidIdentityInput => StatusCode::BAD_REQUEST,
+            crate::enrollment::EnrollmentError::InvalidIdentityInput
+            | crate::enrollment::EnrollmentError::InvalidLoginTarget => StatusCode::BAD_REQUEST,
             crate::enrollment::EnrollmentError::InvalidLoginState
             | crate::enrollment::EnrollmentError::IdentityRejected
             | crate::enrollment::EnrollmentError::BindingMismatch
