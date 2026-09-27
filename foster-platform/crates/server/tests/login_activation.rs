@@ -172,8 +172,8 @@ async fn first_enrollment_activates_binding_and_account(pool: MySqlPool) -> anyh
             .await?;
     assert_eq!(binding_status, "ACTIVE");
 
-    let account: (Option<i64>, String, String) = sqlx::query_as(
-        "SELECT active_emulator_id, login_status, verify_status
+    let account: (Option<i64>, String, String, Option<String>) = sqlx::query_as(
+        "SELECT active_emulator_id, login_status, verify_status, game_uid
          FROM game_account
          WHERE id = ?",
     )
@@ -183,6 +183,21 @@ async fn first_enrollment_activates_binding_and_account(pool: MySqlPool) -> anyh
     assert_eq!(account.0, Some(fixture.emulator_id));
     assert_eq!(account.1, "LOGGED_IN");
     assert_eq!(account.2, "VERIFIED");
+    assert_eq!(account.3.as_deref(), Some("10001"));
+
+    let confirmed_uid_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM game_account_identity
+         WHERE game_account_id = ?
+           AND identity_type = 'GAME_UID'
+           AND identity_value = '10001'
+           AND source = 'USER_CONFIRMED'
+           AND enabled = 1",
+    )
+    .bind(fixture.account_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(confirmed_uid_count, 1);
 
     let identity_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*)
