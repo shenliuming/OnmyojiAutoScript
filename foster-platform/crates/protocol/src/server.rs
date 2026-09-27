@@ -35,6 +35,14 @@ pub struct SelectLoginPlatformCommand {
     pub platform: LoginPlatform,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelectLoginIdentityCommand {
+    pub session_no: String,
+    pub emulator_code: String,
+    pub server_name: String,
+    pub character_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FosterTargetIdentity {
     pub masked_account: Option<String>,
@@ -64,5 +72,6 @@ pub enum ServerCommand {
     StartLogin(StartLoginCommand),
     CancelLogin(CancelLoginCommand),
     SelectLoginPlatform(SelectLoginPlatformCommand),
+    SelectLoginIdentity(SelectLoginIdentityCommand),
     ExecuteFoster(ExecuteFosterCommand),
 }
