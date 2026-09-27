@@ -204,6 +204,30 @@ pub async fn mark_login_identity_detected(
     Ok(())
 }
 
+pub async fn mark_login_selection_rejected(
+    pool: &MySqlPool,
+    host_id: i64,
+    session_no: &str,
+    message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE login_session ls
+         JOIN emulator_instance e ON e.id = ls.emulator_id
+         SET ls.identity_verified = 0,
+             ls.identity_verify_reason = ?
+         WHERE ls.session_no = ?
+           AND e.host_id = ?
+           AND ls.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')",
+    )
+    .bind(message.chars().take(255).collect::<String>())
+    .bind(session_no)
+    .bind(host_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn mark_login_failed(
     pool: &MySqlPool,
     host_id: i64,
