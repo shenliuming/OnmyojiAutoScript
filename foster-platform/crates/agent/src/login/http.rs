@@ -70,11 +70,6 @@ where
 }
 
 #[derive(Debug, Serialize)]
-struct DetectLoginRequest {
-    config_name: String,
-}
-
-#[derive(Debug, Serialize)]
 struct SelectPlatformRequest {
     config_name: String,
     platform: &'static str,
@@ -90,12 +85,10 @@ struct SelectIdentityRequest {
 #[derive(Debug, Deserialize)]
 struct DetectLoginResponse {
     ready: bool,
-    ambiguous: bool,
     message: String,
     masked_account: Option<String>,
     character_name: Option<String>,
     server_name: Option<String>,
-    game_uid: Option<String>,
 }
 
 #[async_trait]
