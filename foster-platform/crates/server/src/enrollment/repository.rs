@@ -578,7 +578,9 @@ pub async fn lock_login_session_by_id(
             detected_masked_account,
             detected_character_name,
             detected_server_name,
-            detected_game_uid
+            detected_game_uid,
+            expected_game_uid,
+            identity_verified
          FROM login_session
          WHERE id = ?
          FOR UPDATE",
