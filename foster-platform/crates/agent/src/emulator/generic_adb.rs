@@ -405,9 +405,13 @@ pub async fn uninstall_package<R: CommandRunner>(
     Ok(())
 }
 
-/// Network ADB serials (e.g. MuMu's 127.0.0.1:16384) must be connected before
-/// `get-state`/`shell` answer. `connect` is idempotent and safe to repeat.
+/// TCP ADB endpoints (for example 127.0.0.1:5555) need an explicit connect.
+/// Device serials already registered by the emulator (for example emulator-5554)
+/// must be addressed directly with `adb -s` and should not be passed to connect.
 pub async fn ensure_adb_connected<R: CommandRunner>(runner: &R, adb_program: &str, serial: &str) {
+    if !serial.contains(':') {
+        return;
+    }
     let args = vec!["connect".to_string(), serial.to_string()];
     let _ = runner.run(adb_program, &args).await;
 }
