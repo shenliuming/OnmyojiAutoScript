@@ -41,7 +41,7 @@ pub trait LoginExecutor: Send + Sync + 'static {
     async fn select_identity(
         &self,
         command: &SelectLoginIdentityCommand,
-    ) -> Result<(), LoginExecutorError>;
+    ) -> Result<LoginIdentity, LoginExecutorError>;
 
     async fn cancel(&self, session_no: &str) -> Result<(), LoginExecutorError>;
 }
