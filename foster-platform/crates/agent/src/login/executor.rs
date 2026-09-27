@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use foster_protocol::StartLoginCommand;
+use foster_protocol::{SelectLoginIdentityCommand, SelectLoginPlatformCommand, StartLoginCommand};
 
 #[derive(Debug, Clone)]
 pub struct LoginPrepared {
@@ -32,6 +32,16 @@ pub trait LoginExecutor: Send + Sync + 'static {
         &self,
         command: &StartLoginCommand,
     ) -> Result<LoginIdentity, LoginExecutorError>;
+
+    async fn select_platform(
+        &self,
+        command: &SelectLoginPlatformCommand,
+    ) -> Result<(), LoginExecutorError>;
+
+    async fn select_identity(
+        &self,
+        command: &SelectLoginIdentityCommand,
+    ) -> Result<(), LoginExecutorError>;
 
     async fn cancel(&self, session_no: &str) -> Result<(), LoginExecutorError>;
 }
