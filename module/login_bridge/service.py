@@ -70,6 +70,124 @@ class LoginDetectService:
                 message=f"login identity detection not ready: {error}",
             )
 
+    def select_platform(self, config_name: str, platform: str) -> LoginDetectResponse:
+        try:
+            platform = (platform or "").strip().upper()
+            if platform not in {"ANDROID", "IOS"}:
+                return LoginDetectResponse(
+                    ready=False,
+                    message=f"unsupported login platform: {platform}",
+                )
+
+            config = Config(config_name=config_name)
+            device = Device(config=config)
+            detector = LoginAccount(config=config, device=device)
+
+            for _ in range(60):
+                detector.screenshot()
+
+                if detector.appear(detector.I_SA_LOGIN_FORM_APPLE) or detector.appear(
+                    detector.I_SA_LOGIN_FORM_ANDROID
+                ):
+                    target = (
+                        detector.I_SA_LOGIN_FORM_ANDROID
+                        if platform == "ANDROID"
+                        else detector.I_SA_LOGIN_FORM_APPLE
+                    )
+                    detector.ui_click_until_disappear(target, interval=0.5)
+                    return LoginDetectResponse(
+                        ready=True,
+                        message=f"{platform} login platform selected",
+                    )
+
+                if detector.appear(detector.I_CHECK_LOGIN_FORM):
+                    return LoginDetectResponse(
+                        ready=True,
+                        message="login platform screen already completed",
+                    )
+
+                time.sleep(0.5)
+
+            return LoginDetectResponse(
+                ready=False,
+                message="waiting for Android/iOS platform selection screen",
+            )
+        except Exception as error:
+            return LoginDetectResponse(
+                ready=False,
+                message=f"login platform selection failed: {error}",
+            )
+
+    def select_identity(
+        self,
+        config_name: str,
+        server_name: str,
+        character_name: str,
+    ) -> LoginDetectResponse:
+        try:
+            character_name = (character_name or "").strip()
+            server_name = (server_name or "").strip()
+            if not character_name:
+                return LoginDetectResponse(
+                    ready=False,
+                    message="character name is required",
+                )
+
+            config = Config(config_name=config_name)
+            device = Device(config=config)
+            detector = LoginAccount(config=config, device=device)
+
+            detector.screenshot()
+            self._normalize_login_form(detector)
+            detector.screenshot()
+
+            if not detector.appear(detector.I_CHECK_LOGIN_FORM):
+                return LoginDetectResponse(
+                    ready=False,
+                    message="waiting for game login form before character selection",
+                )
+
+            masked_account = self._detect_account(detector)
+            detector.screenshot()
+
+            if not detector.switch_character(character_name):
+                return LoginDetectResponse(
+                    ready=False,
+                    message=f"target character not found: {character_name}",
+                    masked_account=masked_account,
+                )
+
+            detector.screenshot()
+            actual_server = _clean_text(detector.get_svr_name())
+            if not actual_server:
+                return LoginDetectResponse(
+                    ready=False,
+                    message="target character selected but server name is not ready",
+                    masked_account=masked_account,
+                    character_name=character_name,
+                )
+
+            message = "target character selected"
+            if server_name and actual_server != server_name:
+                message = (
+                    f"target character selected but server mismatch: "
+                    f"expected {server_name}, detected {actual_server}"
+                )
+
+            return LoginDetectResponse(
+                ready=True,
+                message=message,
+                masked_account=masked_account,
+                character_name=character_name,
+                server_name=actual_server,
+                game_uid=None,
+            )
+        except Exception as error:
+            return LoginDetectResponse(
+                ready=False,
+                message=f"login identity selection failed: {error}",
+            )
+
     def _normalize_login_form(self, detector: LoginAccount) -> None:
         if detector.appear(detector.I_SA_CHECK_SELECT_SVR_1) or detector.appear(
             detector.I_SA_CHECK_SELECT_SVR_2
