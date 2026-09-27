@@ -257,7 +257,7 @@ where
             .values()
             .map(|config| EmulatorDescriptor {
                 emulator_code: config.emulator_code.clone(),
-                driver_type: "ADB".to_string(),
+                driver_type: config.driver_type.clone(),
                 adb_serial: Some(config.adb_serial.clone()),
             })
             .collect::<Vec<_>>();
