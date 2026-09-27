@@ -30,7 +30,7 @@ describe('customer shortest login path', () => {
     vi.stubGlobal('fetch', fetcher)
     mount()
 
-    expect(await screen.findByText('开始登录')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '开始登录' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('游戏平台'), { target: { value: 'ios' } })
     fireEvent.change(screen.getByLabelText('角色名'), { target: { value: '测试角色' } })
     fireEvent.change(screen.getByLabelText('角色 ID'), { target: { value: '10001' } })
