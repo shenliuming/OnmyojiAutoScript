@@ -7,7 +7,8 @@ use foster_domain::{
     verify_identity,
 };
 use foster_protocol::{
-    AgentEvent, LoginPlatform, SelectLoginPlatformCommand, ServerCommand, StartLoginCommand,
+    AgentEvent, LoginPlatform, SelectLoginIdentityCommand, SelectLoginPlatformCommand,
+    ServerCommand, StartLoginCommand,
 };
 use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
@@ -30,7 +31,7 @@ use super::{
         mark_login_identity_detected, mark_login_platform_selected, mark_login_preparing,
         mark_login_preparing_after_dispatch, mark_login_qr_expired, mark_login_qr_ready,
         mark_login_waiting_emulator, release_pending_binding, release_pending_binding_tx,
-        save_expected_login_identity,
+        replace_user_confirmed_game_uid, save_expected_login_identity,
     },
 };
 
@@ -357,6 +358,12 @@ impl EnrollmentService {
             return Err(EnrollmentError::AccountBindingConflict);
         }
 
+        let user_confirmed_game_uid = session
+            .expected_game_uid
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(EnrollmentError::IdentityRejected)?;
+
         let detected = DetectedIdentity {
             masked_account: session.detected_masked_account.clone(),
             character_name: session.detected_character_name.clone(),
@@ -366,6 +373,20 @@ impl EnrollmentService {
         };
 
         let trusted_rows = load_trusted_identities(&mut tx, session.game_account_id).await?;
+        let normalized_confirmed_uid =
+            normalize_identity(IdentityType::GameUid, user_confirmed_game_uid);
+        let trusted_uid_values = trusted_rows
+            .iter()
+            .filter(|row| row.identity_type == "GAME_UID")
+            .map(|row| row.normalized_value.as_str())
+            .collect::<Vec<_>>();
+        if !trusted_uid_values.is_empty()
+            && !trusted_uid_values
+                .iter()
+                .any(|value| *value == normalized_confirmed_uid)
+        {
+            return Err(EnrollmentError::IdentityRejected);
+        }
 
         if trusted_rows.is_empty() {
             if !first_enrollment_has_strong_identity(&detected) {
@@ -388,6 +409,14 @@ impl EnrollmentService {
             }
         }
 
+        replace_user_confirmed_game_uid(
+            &mut tx,
+            session.game_account_id,
+            user_confirmed_game_uid,
+            &normalized_confirmed_uid,
+        )
+        .await?;
+
         if !activate_pending_binding(&mut tx, binding.id).await? {
             return Err(EnrollmentError::BindingMismatch);
         }
@@ -398,7 +427,7 @@ impl EnrollmentService {
             session.emulator_id,
             detected.character_name.as_deref(),
             detected.server_name.as_deref(),
-            detected.game_uid.as_deref(),
+            Some(user_confirmed_game_uid),
         )
         .await?;
 
@@ -418,6 +447,7 @@ impl EnrollmentService {
         server_name: &str,
         character_name: &str,
         game_uid: &str,
+        registry: &AgentRegistry,
     ) -> Result<LoginIdentityVerification, EnrollmentError> {
         let server_name = server_name.trim();
         let character_name = character_name.trim();
@@ -447,23 +477,20 @@ impl EnrollmentService {
             return Err(EnrollmentError::InvalidLoginState);
         }
 
-        let detected = [
-            session.detected_server_name.as_deref(),
-            session.detected_character_name.as_deref(),
-            session.detected_game_uid.as_deref(),
-        ];
-        let waiting_for_detection = detected.iter().any(Option::is_none);
-        let verified = !waiting_for_detection
+        let detected_ready =
+            session.detected_server_name.is_some() && session.detected_character_name.is_some();
+        let verified = detected_ready
             && session.detected_server_name.as_deref() == Some(server_name)
-            && session.detected_character_name.as_deref() == Some(character_name)
-            && session.detected_game_uid.as_deref() == Some(game_uid);
-        let message = if waiting_for_detection {
-            "信息已保存，等待游戏识别结果"
-        } else if verified {
-            "已与游戏识别结果核对一致"
+            && session.detected_character_name.as_deref() == Some(character_name);
+        let waiting_for_detection = !verified;
+        let message = if verified {
+            "角色名和区服已与游戏识别结果核对一致"
+        } else if detected_ready {
+            "账号信息已保存，正在切换到指定角色并重新校验"
         } else {
-            "填写信息与游戏识别结果不一致，请检查后重新提交"
+            "账号信息已保存，正在等待并选择指定角色"
         };
+
         save_expected_login_identity(
             &mut tx,
             session.id,
@@ -474,7 +501,29 @@ impl EnrollmentService {
             message,
         )
         .await?;
+
+        let (host_id, emulator_code): (i64, String) =
+            sqlx::query_as("SELECT host_id, emulator_code FROM emulator_instance WHERE id = ?")
+                .bind(session.emulator_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let session_no = session.session_no.clone();
         tx.commit().await?;
+
+        if waiting_for_detection {
+            registry
+                .send_command(
+                    host_id,
+                    ServerCommand::SelectLoginIdentity(SelectLoginIdentityCommand {
+                        session_no,
+                        emulator_code,
+                        server_name: server_name.to_string(),
+                        character_name: character_name.to_string(),
+                    }),
+                )
+                .await
+                .map_err(|_| EnrollmentError::InvalidLoginState)?;
+        }
 
         Ok(LoginIdentityVerification {
             verified,
