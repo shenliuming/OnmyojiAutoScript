@@ -784,6 +784,9 @@ mod mumu_lease_tests {
                     session_no: session.clone(),
                     game_account_id: 1,
                     emulator_code: "emu-01".into(),
+                    platform: foster_protocol::LoginPlatform::Android,
+                    character_name: "角色A".into(),
+                    game_uid: "10001".into(),
                 },
             )
             .unwrap();
@@ -837,6 +840,9 @@ mod mumu_lease_tests {
                     session_no: "LEASE-EXPIRE".into(),
                     game_account_id: 1,
                     emulator_code: "emu-01".into(),
+                    platform: foster_protocol::LoginPlatform::Android,
+                    character_name: "角色A".into(),
+                    game_uid: "10001".into(),
                 },
             )
             .unwrap();
@@ -894,6 +900,9 @@ mod mumu_lease_tests {
                     session_no: "LEASE-RESTART".into(),
                     game_account_id: 1,
                     emulator_code: "emu-01".into(),
+                    platform: foster_protocol::LoginPlatform::Android,
+                    character_name: "角色A".into(),
+                    game_uid: "10001".into(),
                 },
             )
             .unwrap();
