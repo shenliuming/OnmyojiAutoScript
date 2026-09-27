@@ -267,7 +267,7 @@ where
     async fn select_identity(
         &self,
         command: &SelectLoginIdentityCommand,
-    ) -> Result<(), LoginExecutorError> {
+    ) -> Result<LoginIdentity, LoginExecutorError> {
         let config = self
             .driver
             .instance_config(&command.emulator_code)
@@ -299,17 +299,18 @@ where
             return Err(LoginExecutorError::Message(detected.message));
         }
 
-        self.resolved_identities.lock().await.insert(
-            command.session_no.clone(),
-            LoginIdentity {
-                masked_account: detected.masked_account,
-                character_name: detected.character_name,
-                server_name: detected.server_name,
-                game_uid: None,
-            },
-        );
+        let identity = LoginIdentity {
+            masked_account: detected.masked_account,
+            character_name: detected.character_name,
+            server_name: detected.server_name,
+            game_uid: None,
+        };
+        self.resolved_identities
+            .lock()
+            .await
+            .insert(command.session_no.clone(), identity.clone());
 
-        Ok(())
+        Ok(identity)
     }
 
     async fn cancel(&self, session_no: &str) -> Result<(), LoginExecutorError> {
