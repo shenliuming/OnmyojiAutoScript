@@ -12,6 +12,8 @@ use super::{EmulatorDriver, EmulatorDriverError};
 #[serde(rename_all = "camelCase")]
 pub struct EmulatorInstanceConfig {
     pub emulator_code: String,
+    #[serde(default = "default_driver_type")]
+    pub driver_type: String,
     pub adb_serial: String,
     pub oas_config_name: String,
     pub package_name: Option<String>,
@@ -67,6 +69,10 @@ impl CommandRunner for SystemCommandRunner {
             stderr: output.stderr,
         })
     }
+}
+
+fn default_driver_type() -> String {
+    "ADB".to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -234,7 +240,7 @@ where
             &self.runner,
             &self.adb_program,
             serial,
-            Duration::from_secs(10),
+            Duration::from_secs(120),
         )
         .await
     }
