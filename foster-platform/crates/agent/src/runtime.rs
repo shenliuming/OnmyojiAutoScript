@@ -229,16 +229,20 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                     match executor.select_platform(&command).await {
                         Ok(()) => {
                             outbox.push(AgentEvent::LoginPlatformSelected(
-                                foster_protocol::LoginPlatformSelected { session_no },
+                                foster_protocol::LoginPlatformSelected {
+                                    session_no,
+                                    platform: command.platform,
+                                },
                             ));
                         }
                         Err(error) => {
-                            let _ = executor.cancel(&session_no).await;
-                            outbox.push(AgentEvent::LoginFailed(LoginFailed {
-                                session_no,
-                                code: "LOGIN_PLATFORM_SELECTION_FAILED".to_string(),
-                                message: error.to_string(),
-                            }));
+                            outbox.push(AgentEvent::LoginSelectionRejected(
+                                foster_protocol::LoginSelectionRejected {
+                                    session_no,
+                                    action: "PLATFORM".to_string(),
+                                    message: error.to_string(),
+                                },
+                            ));
                         }
                     }
                 });
@@ -269,12 +273,13 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                             outbox.push(event);
                         }
                         Err(error) => {
-                            let _ = executor.cancel(&session_no).await;
-                            outbox.push(AgentEvent::LoginFailed(LoginFailed {
-                                session_no,
-                                code: "LOGIN_IDENTITY_SELECTION_FAILED".to_string(),
-                                message: error.to_string(),
-                            }));
+                            outbox.push(AgentEvent::LoginSelectionRejected(
+                                foster_protocol::LoginSelectionRejected {
+                                    session_no,
+                                    action: "IDENTITY".to_string(),
+                                    message: error.to_string(),
+                                },
+                            ));
                         }
                     }
                 });
