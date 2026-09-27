@@ -1,12 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use foster_agent::{
     command_journal::CommandJournal,
     config::AgentConfig,
-    emulator::{EmulatorDriver, GenericAdbEmulatorDriver, SystemCommandRunner},
+    emulator::GenericAdbEmulatorDriver,
     foster::HttpOasFosterExecutor,
     login::HttpOasLoginExecutor,
-    mumu::{AdbMarketUi, AppMarketInstaller, MumuCli, MumuConfig, MumuLoginPreparer},
     runtime::AgentRuntime,
 };
 
@@ -25,9 +24,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let journal_path = std::env::var("FOSTER_COMMAND_JOURNAL_PATH")
         .unwrap_or_else(|_| "command-journal.json".to_string());
     let command_journal = CommandJournal::open(&journal_path)?;
-
-    let mumu_config = MumuConfig::from_env()?;
-    let mumu_cli = MumuCli::new(mumu_config.clone());
 
     let emulators_json = std::env::var("FOSTER_EMULATORS_JSON")?;
     let adb_program = std::env::var("FOSTER_ADB_PATH").unwrap_or_else(|_| "adb".to_string());
@@ -58,54 +54,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(Duration::from_secs)
         .unwrap_or_else(|| Duration::from_secs(2));
 
-    let market = Arc::new(AppMarketInstaller::new(
-        Arc::new(AdbMarketUi::new(
-            SystemCommandRunner,
-            adb_program.clone(),
-            mumu_config.app_market_activity.clone(),
-        )),
-        mumu_config.full_channel_package().to_string(),
-        mumu_config.market_timeout,
-        mumu_config.market_poll_interval,
-    ));
-    let preparer = MumuLoginPreparer::new(
-        Arc::new(mumu_cli.clone()),
-        Arc::new(SystemCommandRunner),
-        market,
-        mumu_config.clone(),
-        adb_program.clone(),
-    )
-    .shared();
-
-    let mut startup_instances = driver.list_instances().await?;
-    startup_instances.sort_by(|left, right| left.emulator_code.cmp(&right.emulator_code));
-    for instance in startup_instances {
-        let serial = instance
-            .adb_serial
-            .ok_or_else(|| format!("MuMu instance {} has no ADB serial", instance.emulator_code))?;
-        let config = driver.instance_config(&instance.emulator_code)?;
-        tracing::info!(
-            emulator_code = %instance.emulator_code,
-            serial = %serial,
-            "preparing MuMu full-channel package before Agent startup"
-        );
-        preparer
-            .prepare(&serial, &config.oas_config_name)
-            .await
-            .map_err(|error| {
-                format!(
-                    "startup preparation failed for {}: {error}",
-                    instance.emulator_code
-                )
-            })?;
-    }
-
     tracing::info!(
         oas_base_url = %oas_base_url,
         emulator_count = driver.oas_config_map().len(),
         command_journal = %journal_path,
-        mumu_cli = %mumu_config.cli_path.display(),
-        "starting foster agent with MuMu full-channel login preparation"
+        "starting foster agent with generic ADB/LDPlayer control"
     );
 
     let config = AgentConfig::production(server_ws_url, agent_token, agent_id, host_id);
@@ -116,8 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         login_qr_ttl,
         login_identity_timeout,
         login_poll_interval,
-    )
-    .with_preparer(preparer);
+    );
 
     let foster_executor =
         HttpOasFosterExecutor::new(oas_base_url, driver.oas_config_map(), foster_timeout);
@@ -125,8 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = AgentRuntime::new(config, driver)
         .with_login_executor(login_executor)
         .with_foster_executor(foster_executor)
-        .with_command_journal(command_journal)
-        .with_mumu_instance_source(mumu_cli);
+        .with_command_journal(command_journal);
 
     runtime.run().await?;
     Ok(())
