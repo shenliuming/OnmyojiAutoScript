@@ -158,65 +158,59 @@ where
         &self,
         command: &StartLoginCommand,
     ) -> Result<LoginIdentity, LoginExecutorError> {
-        let config = self
-            .driver
-            .instance_config(&command.emulator_code)
-            .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
         let deadline = tokio::time::Instant::now() + self.identity_timeout;
+        let platform_command = SelectLoginPlatformCommand {
+            session_no: command.session_no.clone(),
+            emulator_code: command.emulator_code.clone(),
+            platform: command.platform,
+        };
+        let identity_command = SelectLoginIdentityCommand {
+            session_no: command.session_no.clone(),
+            emulator_code: command.emulator_code.clone(),
+            server_name: String::new(),
+            character_name: command.character_name.clone(),
+        };
 
+        let mut platform_selected = false;
         loop {
             if self.is_cancelled(&command.session_no).await {
                 return Err(LoginExecutorError::Message("login cancelled".into()));
             }
-
-            if self
-                .explicit_identity_sessions
-                .lock()
-                .await
-                .contains(&command.session_no)
-            {
-                tokio::time::sleep(self.poll_interval).await;
-                continue;
-            }
-
             if tokio::time::Instant::now() >= deadline {
                 return Err(LoginExecutorError::Message(
-                    "timed out waiting for game identity after QR scan".into(),
+                    "timed out waiting for QR scan and target character selection".into(),
                 ));
             }
 
-            let response = self
-                .client
-                .post(format!("{}/login/detect", self.base_url))
-                .json(&DetectLoginRequest {
-                    config_name: config.oas_config_name.clone(),
-                })
-                .send()
-                .await;
-
-            if let Ok(response) = response
-                && response.status().is_success()
-                && let Ok(detected) = response.json::<DetectLoginResponse>().await
-            {
-                if detected.ready {
-                    return Ok(LoginIdentity {
-                        masked_account: detected.masked_account,
-                        character_name: detected.character_name,
-                        server_name: detected.server_name,
-                        game_uid: detected.game_uid,
-                    });
-                }
-
-                if detected.ambiguous {
-                    tracing::debug!(
-                        session_no = %command.session_no,
-                        message = %detected.message,
-                        "login identity is still ambiguous"
-                    );
+            if !platform_selected {
+                match self.select_platform(&platform_command).await {
+                    Ok(()) => {
+                        platform_selected = true;
+                    }
+                    Err(error) => {
+                        tracing::debug!(
+                            session_no = %command.session_no,
+                            error = %error,
+                            "waiting for requested Android/iOS platform screen"
+                        );
+                        tokio::time::sleep(self.poll_interval).await;
+                        continue;
+                    }
                 }
             }
 
-            tokio::time::sleep(self.poll_interval).await;
+            match self.select_identity(&identity_command).await {
+                Ok(identity) => return Ok(identity),
+                Err(error) => {
+                    tracing::debug!(
+                        session_no = %command.session_no,
+                        character_name = %command.character_name,
+                        error = %error,
+                        "waiting for target character selection"
+                    );
+                    tokio::time::sleep(self.poll_interval).await;
+                }
+            }
         }
     }
 
