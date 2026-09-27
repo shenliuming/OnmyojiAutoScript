@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -30,7 +26,6 @@ where
     identity_timeout: Duration,
     poll_interval: Duration,
     cancelled: Arc<Mutex<HashSet<String>>>,
-    resolved_identities: Arc<Mutex<HashMap<String, LoginIdentity>>>,
     explicit_identity_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
@@ -54,7 +49,6 @@ where
             identity_timeout,
             poll_interval,
             cancelled: Arc::new(Mutex::new(HashSet::new())),
-            resolved_identities: Arc::new(Mutex::new(HashMap::new())),
             explicit_identity_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
@@ -173,15 +167,6 @@ where
         loop {
             if self.is_cancelled(&command.session_no).await {
                 return Err(LoginExecutorError::Message("login cancelled".into()));
-            }
-
-            if let Some(identity) = self
-                .resolved_identities
-                .lock()
-                .await
-                .remove(&command.session_no)
-            {
-                return Ok(identity);
             }
 
             if self
@@ -322,17 +307,11 @@ where
             server_name: detected.server_name,
             game_uid: None,
         };
-        self.resolved_identities
-            .lock()
-            .await
-            .insert(command.session_no.clone(), identity.clone());
-
         Ok(identity)
     }
 
     async fn cancel(&self, session_no: &str) -> Result<(), LoginExecutorError> {
         self.cancelled.lock().await.insert(session_no.to_string());
-        self.resolved_identities.lock().await.remove(session_no);
         self.explicit_identity_sessions.lock().await.remove(session_no);
         Ok(())
     }
