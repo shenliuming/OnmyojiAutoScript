@@ -39,9 +39,9 @@ async fn seed_fixture(pool: &MySqlPool, suffix: &str) -> anyhow::Result<Fixture>
 
     let account = sqlx::query(
         "INSERT INTO game_account(
-            customer_id, login_status, verify_status
+            customer_id, platform, login_status, verify_status
          )
-         VALUES (?, 'PENDING', 'PENDING')",
+         VALUES (?, 'ANDROID', 'PENDING', 'PENDING')",
     )
     .bind(10000_i64 + host_id)
     .execute(pool)
@@ -51,6 +51,16 @@ async fn seed_fixture(pool: &MySqlPool, suffix: &str) -> anyhow::Result<Fixture>
     let created = EnrollmentService::new(pool.clone())
         .create_login_session(account_id, Duration::from_secs(900))
         .await?;
+
+    sqlx::query(
+        "UPDATE login_session
+         SET expected_character_name = '角色A',
+             expected_game_uid = '10001'
+         WHERE session_no = ?",
+    )
+    .bind(&created.session_no)
+    .execute(pool)
+    .await?;
 
     Ok(Fixture {
         host_id,
@@ -108,6 +118,9 @@ async fn online_host_receives_start_login(pool: MySqlPool) -> anyhow::Result<()>
             assert_eq!(command.session_no, fixture.session_no);
             assert_eq!(command.game_account_id, fixture.account_id);
             assert!(command.emulator_code.starts_with("emu-dispatch-online"));
+            assert_eq!(command.platform, foster_protocol::LoginPlatform::Android);
+            assert_eq!(command.character_name, "角色A");
+            assert_eq!(command.game_uid, "10001");
         }
         other => panic!("expected START_LOGIN, got {other:?}"),
     }
