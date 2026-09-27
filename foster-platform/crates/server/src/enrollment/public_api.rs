@@ -13,7 +13,7 @@ use sqlx::{FromRow, MySqlPool};
 
 use crate::app::AppState;
 
-use super::{EnrollmentError, EnrollmentService};
+use super::{DispatchLoginResult, EnrollmentError, EnrollmentService};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +107,46 @@ pub struct ConfirmLoginResponse {
     pub status: &'static str,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartLoginRequest {
+    pub platform: String,
+    pub character_name: String,
+    pub game_uid: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartLoginResponse {
+    pub status: &'static str,
+}
+
+pub async fn start_login(
+    Path(control_token): Path<String>,
+    State(state): State<AppState>,
+    Json(request): Json<StartLoginRequest>,
+) -> Result<Json<StartLoginResponse>, StatusCode> {
+    let platform = parse_login_platform(&request.platform).ok_or(StatusCode::BAD_REQUEST)?;
+    let dispatch = EnrollmentService::new(state.pool.clone())
+        .start_login_with_target(
+            &control_token,
+            platform,
+            &request.character_name,
+            &request.game_uid,
+            &state.registry,
+        )
+        .await
+        .map_err(activation_status)?;
+
+    let status = match dispatch {
+        DispatchLoginResult::Dispatched => "DISPATCHED",
+        DispatchLoginResult::WaitingEmulator => "WAITING_EMULATOR",
+        DispatchLoginResult::AlreadyDispatched => "ALREADY_DISPATCHED",
+    };
+
+    Ok(Json(StartLoginResponse { status }))
+}
+
 pub async fn confirm_login(
     Path(control_token): Path<String>,
     State(state): State<AppState>,
@@ -196,7 +236,9 @@ fn activation_status(error: EnrollmentError) -> StatusCode {
     match error {
         EnrollmentError::LoginSessionNotFound => StatusCode::NOT_FOUND,
         EnrollmentError::LoginSessionExpired => StatusCode::GONE,
-        EnrollmentError::InvalidIdentityInput => StatusCode::BAD_REQUEST,
+        EnrollmentError::InvalidIdentityInput | EnrollmentError::InvalidLoginTarget => {
+            StatusCode::BAD_REQUEST
+        }
         EnrollmentError::InvalidLoginState
         | EnrollmentError::IdentityRejected
         | EnrollmentError::BindingMismatch
