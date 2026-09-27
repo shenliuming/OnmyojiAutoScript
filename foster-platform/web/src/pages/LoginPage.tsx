@@ -5,9 +5,27 @@ import { QrPanel } from '../components/QrPanel'
 import { apiFetch } from '../lib/api'
 
 type LoginStatus = {
-  sessionNo: string; status: string; qrExpiresAt: string | null;
-  characterName: string | null; serverName: string | null; identityVerified: boolean;
-  identityVerifyReason: string | null; expiresAt: string;
+  sessionNo: string
+  status: string
+  qrExpiresAt: string | null
+  characterName: string | null
+  serverName: string | null
+  identityVerified: boolean
+  identityVerifyReason: string | null
+  expiresAt: string
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  CREATED: '请填写登录信息',
+  WAITING_EMULATOR: '等待模拟器',
+  PREPARING: '正在准备模拟器',
+  QR_READY: '请扫码登录',
+  WAITING_SCAN: '请扫码登录',
+  DETECTING_LOGIN: '正在选择平台和角色',
+  VERIFYING_ACCOUNT: '请确认账号',
+  SUCCESS: '登录完成',
+  FAILED: '登录失败',
+  CANCELLED: '登录已取消',
 }
 
 export function LoginPage() {
@@ -17,8 +35,7 @@ export function LoginPage() {
   const [data, setData] = useState<LoginStatus | null>(null)
   const [statusMessage, setStatusMessage] = useState('正在连接…')
   const [detail, setDetail] = useState('')
-  const [platformBusy, setPlatformBusy] = useState(false)
-  const [identityBusy, setIdentityBusy] = useState(false)
+  const [startBusy, setStartBusy] = useState(false)
   const [confirmBusy, setConfirmBusy] = useState(false)
 
   const refresh = useCallback(async () => {
@@ -32,10 +49,19 @@ export function LoginPage() {
       }
       const next = await response.json() as LoginStatus
       setData(next)
-      setStatusMessage(next.status === 'SUCCESS' ? '登录完成' : next.status)
+      setStatusMessage(STATUS_LABELS[next.status] || next.status)
+
       const who = [next.characterName, next.serverName].filter(Boolean).join(' · ')
-      setDetail(next.status === 'SUCCESS' ? who || '账号已绑定，可以关闭此页面' : next.identityVerifyReason || who || '等待游戏返回账号信息')
-    } catch { setStatusMessage('网络连接异常') }
+      if (next.status === 'SUCCESS') {
+        setDetail(who || '账号已绑定，可以关闭此页面')
+      } else if (next.status === 'VERIFYING_ACCOUNT' && next.identityVerified) {
+        setDetail(who ? `已识别：${who}。请确认这是你的角色。` : '账号已识别，请确认')
+      } else {
+        setDetail(next.identityVerifyReason || who || '')
+      }
+    } catch {
+      setStatusMessage('网络连接异常')
+    }
   }, [token])
 
   useEffect(() => {
@@ -45,42 +71,35 @@ export function LoginPage() {
     if (token && typeof EventSource !== 'undefined') {
       events = new EventSource(`/public/login/${encodeURIComponent(token)}/events`)
       events.addEventListener('login_status', () => { void refresh() })
-      // EventSource reconnects automatically; polling also covers disconnected clients.
     }
-    return () => { window.clearInterval(timer); events?.close() }
+    return () => {
+      window.clearInterval(timer)
+      events?.close()
+    }
   }, [refresh, token])
 
-  async function selectPlatform(platform: 'android' | 'ios') {
-    if (!controlToken || platformBusy) return
-    setPlatformBusy(true)
-    setDetail('已提交平台选择，正在继续登录…')
+  async function startLogin(identity: Identity) {
+    if (!controlToken || startBusy) return
+    setStartBusy(true)
+    setDetail('正在分配并启动模拟器…')
     try {
-      const response = await apiFetch(`/public/login/${encodeURIComponent(controlToken)}/platform`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ platform }),
-      })
-      if (!response.ok) setDetail('平台选择失败，请重新点击')
-      else await refresh()
-    } catch { setDetail('网络异常，平台选择失败，请重试') }
-    finally { setPlatformBusy(false) }
-  }
-
-  async function submitIdentity(identity: Identity) {
-    if (!controlToken || identityBusy) return
-    setIdentityBusy(true)
-    setDetail('已提交账号信息，正在切换到指定角色并校验…')
-    try {
-      const response = await apiFetch(`/public/login/${encodeURIComponent(controlToken)}/identity`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(identity),
+      const response = await apiFetch(`/public/login/${encodeURIComponent(controlToken)}/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(identity),
       })
       if (!response.ok) {
-        setDetail(response.status === 409 ? '当前登录状态不能提交，请等扫码后再试' : '提交失败，请检查填写内容后重试')
+        setDetail(response.status === 400
+          ? '请检查平台、角色名和角色 ID'
+          : '启动登录失败，请检查模拟器状态后重试')
         return
       }
-      const result = await response.json() as { verified: boolean; message: string }
-      setDetail(result.message)
-      if (result.verified) await refresh()
-    } catch { setDetail('网络异常，提交失败，请重试') }
-    finally { setIdentityBusy(false) }
+      await refresh()
+    } catch {
+      setDetail('网络异常，启动登录失败，请重试')
+    } finally {
+      setStartBusy(false)
+    }
   }
 
   async function confirm() {
@@ -88,30 +107,44 @@ export function LoginPage() {
     setConfirmBusy(true)
     try {
       const response = await apiFetch(`/public/login/${encodeURIComponent(controlToken)}/confirm`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirmed: true }),
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true }),
       })
       if (!response.ok) setDetail('确认失败，请稍后重试')
       else await refresh()
-    } catch { setDetail('网络异常，确认失败，请重试') }
-    finally { setConfirmBusy(false) }
+    } catch {
+      setDetail('网络异常，确认失败，请重试')
+    } finally {
+      setConfirmBusy(false)
+    }
   }
 
-  const qrVisible = data && ['QR_READY', 'WAITING_SCAN'].includes(data.status) && Boolean(data.qrExpiresAt)
-  const choosePlatform = controlToken && data && ['QR_READY', 'WAITING_SCAN'].includes(data.status)
-  const enterIdentity = controlToken && data && ['DETECTING_LOGIN', 'VERIFYING_ACCOUNT'].includes(data.status) && !data.identityVerified
+  const showStartForm = Boolean(controlToken && data && ['CREATED', 'WAITING_EMULATOR'].includes(data.status))
+  const qrVisible = Boolean(data && ['QR_READY', 'WAITING_SCAN'].includes(data.status) && data.qrExpiresAt)
   const canConfirm = Boolean(controlToken && data?.status === 'VERIFYING_ACCOUNT' && data.identityVerified && !confirmBusy)
 
   return <main className="customer-page"><section className="card">
     <h1>游戏账号登录</h1>
-    <p className="muted">请使用手机扫码完成登录。系统只保存账号识别信息，不保存密码。</p>
-    <div className="login-status" role="status"><strong>{statusMessage}</strong><p>{detail}</p></div>
-    {qrVisible && <QrPanel publicToken={token!} qrExpiresAt={data.qrExpiresAt!} />}
-    {choosePlatform && <div className="platform-box"><p>扫码成功后，请选择账号所在的区服平台：</p>
-      <div className="actions"><button disabled={platformBusy} onClick={() => { void selectPlatform('android') }}>安卓区</button>
-        <button disabled={platformBusy} onClick={() => { void selectPlatform('ios') }}>iOS 区</button></div>
-    </div>}
-    {enterIdentity && <IdentityForm busy={identityBusy} onSubmit={identity => { void submitIdentity(identity) }} />}
-    <div className="actions"><button onClick={() => { void refresh() }}>刷新状态</button>
-      <button disabled={!canConfirm} onClick={() => { void confirm() }}>确认这是我的账号</button></div>
+    <p className="muted">填写平台、角色名和角色 ID 后扫码。系统会自动选择平台和角色，并识别实际区服。</p>
+
+    <div className="login-status" role="status">
+      <strong>{statusMessage}</strong>
+      <p>{detail}</p>
+    </div>
+
+    {showStartForm && <IdentityForm busy={startBusy} onSubmit={identity => { void startLogin(identity) }} />}
+
+    {qrVisible && <>
+      <QrPanel publicToken={token!} qrExpiresAt={data!.qrExpiresAt!} />
+      <p className="muted">扫码后无需继续操作，系统会自动选择你填写的平台和角色。</p>
+    </>}
+
+    {data?.status === 'DETECTING_LOGIN' && <p className="muted">正在模拟器中选择平台、查找角色并读取区服…</p>}
+
+    <div className="actions">
+      <button onClick={() => { void refresh() }}>刷新状态</button>
+      <button disabled={!canConfirm} onClick={() => { void confirm() }}>确认这是我的角色</button>
+    </div>
   </section></main>
 }
