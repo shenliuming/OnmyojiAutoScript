@@ -61,6 +61,9 @@ fn command() -> StartLoginCommand {
         session_no: "LOGIN-REAL".into(),
         game_account_id: 1001,
         emulator_code: "emu-login".into(),
+        platform: foster_protocol::LoginPlatform::Android,
+        character_name: "角色A".into(),
+        game_uid: "10001".into(),
     }
 }
 
@@ -104,20 +107,35 @@ async fn prepare_returns_png_data_url() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn wait_identity_accepts_unique_character_and_server() -> anyhow::Result<()> {
-    let app = Router::new().route(
-        "/login/detect",
-        post(|| async {
-            Json(json!({
-                "ready": true,
-                "ambiguous": false,
-                "message": "game identity detected",
-                "masked_account": "138****5678",
-                "character_name": "角色A",
-                "server_name": "春之樱",
-                "game_uid": null
-            }))
-        }),
-    );
+    let app = Router::new()
+        .route(
+            "/login/platform",
+            post(|| async {
+                Json(json!({
+                    "ready": true,
+                    "ambiguous": false,
+                    "message": "ANDROID login platform selected",
+                    "masked_account": null,
+                    "character_name": null,
+                    "server_name": null,
+                    "game_uid": null
+                }))
+            }),
+        )
+        .route(
+            "/login/select-identity",
+            post(|| async {
+                Json(json!({
+                    "ready": true,
+                    "ambiguous": false,
+                    "message": "target character selected",
+                    "masked_account": "138****5678",
+                    "character_name": "角色A",
+                    "server_name": "春之樱",
+                    "game_uid": null
+                }))
+            }),
+        );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     let server = tokio::spawn(async move {
