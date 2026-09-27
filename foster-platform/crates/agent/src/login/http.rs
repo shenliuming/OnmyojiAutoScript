@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::emulator::{CommandRunner, GenericAdbEmulatorDriver};
-use crate::mumu::{MumuController, MumuLoginPreparer};
+
 
 use super::{LoginExecutor, LoginExecutorError, LoginIdentity, LoginPrepared};
 
@@ -19,7 +19,6 @@ where
     R: CommandRunner,
 {
     driver: GenericAdbEmulatorDriver<R>,
-    preparer: Option<Arc<MumuLoginPreparer<dyn MumuController, R>>>,
     client: reqwest::Client,
     base_url: String,
     qr_ttl: Duration,
@@ -42,7 +41,6 @@ where
     ) -> Self {
         Self {
             driver,
-            preparer: None,
             client: reqwest::Client::new(),
             base_url: base_url.trim_end_matches('/').to_string(),
             qr_ttl,
@@ -51,17 +49,6 @@ where
             cancelled: Arc::new(Mutex::new(HashSet::new())),
             explicit_identity_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
-    }
-
-    /// Route preparation through MuMu full-channel orchestration. The preparer
-    /// owns package validation; this executor only launches the package the
-    /// preparer validated.
-    pub fn with_preparer(
-        mut self,
-        preparer: Arc<MumuLoginPreparer<dyn MumuController, R>>,
-    ) -> Self {
-        self.preparer = Some(preparer);
-        self
     }
 
     async fn is_cancelled(&self, session_no: &str) -> bool {
@@ -104,40 +91,11 @@ where
             return Err(LoginExecutorError::Message("login cancelled".into()));
         }
 
-        let png = if let Some(preparer) = &self.preparer {
-            let config = self
-                .driver
-                .instance_config(&command.emulator_code)
-                .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
-            let prepared = preparer
-                .prepare(&config.adb_serial, &config.oas_config_name)
-                .await
-                .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
-
-            self.driver
-                .launch_package_for_serial(&prepared.adb_serial, &prepared.full_channel_package)
-                .await
-                .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
-            self.driver
-                .wait_package_running_for_serial(
-                    &prepared.adb_serial,
-                    &prepared.full_channel_package,
-                    prepared.launch_wait,
-                )
-                .await
-                .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
-            tokio::time::sleep(prepared.settle_delay).await;
-
-            self.driver
-                .screenshot_for_serial(&prepared.adb_serial)
-                .await
-                .map_err(|error| LoginExecutorError::Message(error.to_string()))?
-        } else {
-            self.driver
-                .prepare_login_screen(&command.emulator_code)
-                .await
-                .map_err(|error| LoginExecutorError::Message(error.to_string()))?
-        };
+        let png = self
+            .driver
+            .prepare_login_screen(&command.emulator_code)
+            .await
+            .map_err(|error| LoginExecutorError::Message(error.to_string()))?;
 
         let qr_payload = format!("data:image/png;base64,{}", STANDARD.encode(png));
 
