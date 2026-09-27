@@ -110,7 +110,7 @@ async fn onboarding_creates_pending_subscription_login_and_share_link(
     assert!(result.login_url.contains("#control="));
     assert!(result.service_url.starts_with("/service/"));
     assert!(result.service_url.contains("#control="));
-    assert_eq!(result.login_dispatch_status, "WAITING_EMULATOR");
+    assert_eq!(result.login_dispatch_status, "AWAITING_USER_INPUT");
 
     let subscription: (String, String, String, i32, i32) = sqlx::query_as(
         "SELECT
@@ -299,7 +299,10 @@ async fn confirmed_onboarding_login_activates_subscription(pool: MySqlPool) -> a
         "UPDATE login_session
          SET status = 'VERIFYING_ACCOUNT',
              detected_character_name = '角色首单',
-             detected_server_name = '春之樱'
+             detected_server_name = '春之樱',
+             expected_character_name = '角色首单',
+             expected_game_uid = '10001',
+             identity_verified = 1
          WHERE game_account_id = (
              SELECT game_account_id
              FROM foster_subscription
