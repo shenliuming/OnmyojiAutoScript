@@ -214,6 +214,57 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 }
                 self.command_journal.interrupt_login(&command.session_no)?;
             }
+            ServerCommand::SelectLoginPlatform(command) => {
+                let Some(executor) = self.login_executor.clone() else {
+                    self.outbox.push(AgentEvent::LoginFailed(LoginFailed {
+                        session_no: command.session_no,
+                        code: "LOGIN_EXECUTOR_NOT_CONFIGURED".to_string(),
+                        message: "login executor is not configured".to_string(),
+                    }));
+                    return Ok(());
+                };
+                let outbox = self.outbox.clone();
+                tokio::spawn(async move {
+                    let session_no = command.session_no.clone();
+                    match executor.select_platform(&command).await {
+                        Ok(()) => {
+                            outbox.push(AgentEvent::LoginPlatformSelected(
+                                foster_protocol::LoginPlatformSelected { session_no },
+                            ));
+                        }
+                        Err(error) => {
+                            let _ = executor.cancel(&session_no).await;
+                            outbox.push(AgentEvent::LoginFailed(LoginFailed {
+                                session_no,
+                                code: "LOGIN_PLATFORM_SELECTION_FAILED".to_string(),
+                                message: error.to_string(),
+                            }));
+                        }
+                    }
+                });
+            }
+            ServerCommand::SelectLoginIdentity(command) => {
+                let Some(executor) = self.login_executor.clone() else {
+                    self.outbox.push(AgentEvent::LoginFailed(LoginFailed {
+                        session_no: command.session_no,
+                        code: "LOGIN_EXECUTOR_NOT_CONFIGURED".to_string(),
+                        message: "login executor is not configured".to_string(),
+                    }));
+                    return Ok(());
+                };
+                let outbox = self.outbox.clone();
+                tokio::spawn(async move {
+                    let session_no = command.session_no.clone();
+                    if let Err(error) = executor.select_identity(&command).await {
+                        let _ = executor.cancel(&session_no).await;
+                        outbox.push(AgentEvent::LoginFailed(LoginFailed {
+                            session_no,
+                            code: "LOGIN_IDENTITY_SELECTION_FAILED".to_string(),
+                            message: error.to_string(),
+                        }));
+                    }
+                });
+            }
             ServerCommand::ExecuteFoster(command) => {
                 self.handle_execute_foster(command_id, command)?;
             }
