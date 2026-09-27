@@ -258,6 +258,7 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                 };
                 let outbox = self.outbox.clone();
                 let journal = self.command_journal.clone();
+                let login_tasks = self.login_tasks.clone();
                 tokio::spawn(async move {
                     let session_no = command.session_no.clone();
                     match executor.select_identity(&command).await {
@@ -270,6 +271,9 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                                 game_uid: None,
                             });
                             let _ = journal.finish_login(&session_no, event.clone());
+                            if let Some(task) = login_tasks.lock().unwrap().remove(&session_no) {
+                                task.abort();
+                            }
                             outbox.push(event);
                         }
                         Err(error) => {
