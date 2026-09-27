@@ -168,21 +168,27 @@ pub async fn mark_login_identity_detected(
              ls.detected_server_name = ?,
              ls.detected_game_uid = ?,
              ls.identity_verified = (
-                 ls.expected_server_name IS NOT NULL
-                 AND ls.expected_character_name IS NOT NULL
+                 ls.expected_character_name IS NOT NULL
                  AND ls.expected_game_uid IS NOT NULL
-                 AND BINARY ls.expected_server_name = BINARY ?
+                 AND ? IS NOT NULL
                  AND BINARY ls.expected_character_name = BINARY ?
+                 AND (
+                     ls.expected_server_name IS NULL
+                     OR BINARY ls.expected_server_name = BINARY ?
+                 )
              ),
              ls.identity_verify_reason = CASE
-                 WHEN ls.expected_server_name IS NULL
-                   OR ls.expected_character_name IS NULL
+                 WHEN ls.expected_character_name IS NULL
                    OR ls.expected_game_uid IS NULL
-                   THEN '请先填写区服、角色名和游戏 UID'
-                 WHEN BINARY ls.expected_server_name = BINARY ?
-                   AND BINARY ls.expected_character_name = BINARY ?
+                   THEN '请先填写角色名和角色 ID'
+                 WHEN ? IS NULL THEN '已选择角色，等待识别区服'
+                 WHEN BINARY ls.expected_character_name = BINARY ?
+                   AND (
+                       ls.expected_server_name IS NULL
+                       OR BINARY ls.expected_server_name = BINARY ?
+                   )
                    THEN '角色名和区服已与游戏识别结果核对一致'
-                 ELSE '填写的角色名或区服与游戏识别结果不一致，请检查后重新提交'
+                 ELSE '填写的角色名与游戏识别结果不一致，请检查后重试'
              END
          WHERE ls.session_no = ?
            AND e.host_id = ?
@@ -195,7 +201,9 @@ pub async fn mark_login_identity_detected(
     .bind(server_name)
     .bind(character_name)
     .bind(server_name)
+    .bind(server_name)
     .bind(character_name)
+    .bind(server_name)
     .bind(session_no)
     .bind(host_id)
     .execute(pool)
@@ -371,6 +379,42 @@ pub async fn save_expected_login_identity(
     .bind(game_uid)
     .bind(verified)
     .bind(reason)
+    .bind(session_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn save_quick_login_target(
+    tx: &mut Transaction<'_, MySql>,
+    session_id: i64,
+    game_account_id: i64,
+    platform: &str,
+    character_name: &str,
+    game_uid: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE game_account
+         SET platform = ?
+         WHERE id = ?",
+    )
+    .bind(platform)
+    .bind(game_account_id)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE login_session
+         SET expected_server_name = NULL,
+             expected_character_name = ?,
+             expected_game_uid = ?,
+             identity_verified = 0,
+             identity_verify_reason = '等待扫码登录'
+         WHERE id = ?",
+    )
+    .bind(character_name)
+    .bind(game_uid)
     .bind(session_id)
     .execute(&mut **tx)
     .await?;
@@ -662,6 +706,9 @@ pub struct LoginDispatchTarget {
     pub status: String,
     pub host_id: i64,
     pub emulator_code: String,
+    pub platform: Option<String>,
+    pub expected_character_name: Option<String>,
+    pub expected_game_uid: Option<String>,
 }
 
 pub async fn lock_login_dispatch_target(
@@ -675,9 +722,13 @@ pub async fn lock_login_dispatch_target(
             ls.game_account_id,
             ls.status,
             e.host_id,
-            e.emulator_code
+            e.emulator_code,
+            a.platform,
+            ls.expected_character_name,
+            ls.expected_game_uid
          FROM login_session ls
          JOIN emulator_instance e ON e.id = ls.emulator_id
+         JOIN game_account a ON a.id = ls.game_account_id
          WHERE ls.session_no = ?
          FOR UPDATE",
     )
