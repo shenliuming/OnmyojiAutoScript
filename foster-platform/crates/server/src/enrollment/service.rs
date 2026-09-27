@@ -32,7 +32,7 @@ use super::{
         mark_login_selection_rejected,
         mark_login_preparing_after_dispatch, mark_login_qr_expired, mark_login_qr_ready,
         mark_login_waiting_emulator, release_pending_binding, release_pending_binding_tx,
-        replace_user_confirmed_game_uid, save_expected_login_identity,
+        replace_user_confirmed_game_uid, save_expected_login_identity, save_quick_login_target,
     },
 };
 
@@ -54,6 +54,8 @@ pub enum EnrollmentError {
     IdentityRejected,
     #[error("submitted login identity is invalid")]
     InvalidIdentityInput,
+    #[error("platform, character name and role id are required before login starts")]
+    InvalidLoginTarget,
     #[error("login session binding does not match")]
     BindingMismatch,
     #[error("game account is already active on another emulator")]
@@ -186,10 +188,27 @@ impl EnrollmentService {
             }
         }
 
+        let platform = match target.platform.as_deref() {
+            Some("ANDROID") => LoginPlatform::Android,
+            Some("IOS") => LoginPlatform::Ios,
+            _ => return Err(EnrollmentError::InvalidLoginTarget),
+        };
+        let character_name = target
+            .expected_character_name
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(EnrollmentError::InvalidLoginTarget)?;
+        let game_uid = target
+            .expected_game_uid
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(EnrollmentError::InvalidLoginTarget)?;
+
         let command = ServerCommand::StartLogin(StartLoginCommand {
             session_no: target.session_no.clone(),
             game_account_id: target.game_account_id,
             emulator_code: target.emulator_code.clone(),
+            platform,
+            character_name,
+            game_uid,
         });
 
         let delivered = tokio::time::timeout(
@@ -216,6 +235,58 @@ impl EnrollmentService {
                 Ok(DispatchLoginResult::WaitingEmulator)
             }
         }
+    }
+
+    pub async fn start_login_with_target(
+        &self,
+        control_token: &str,
+        platform: LoginPlatform,
+        character_name: &str,
+        game_uid: &str,
+        registry: &AgentRegistry,
+    ) -> Result<DispatchLoginResult, EnrollmentError> {
+        let character_name = character_name.trim();
+        let game_uid = game_uid.trim();
+        if character_name.is_empty()
+            || game_uid.is_empty()
+            || character_name.chars().count() > 64
+            || game_uid.chars().count() > 64
+        {
+            return Err(EnrollmentError::InvalidLoginTarget);
+        }
+
+        let control_token_hash = sha256_hex(control_token);
+        let mut tx = self.pool.begin().await?;
+        let session = lock_login_session_by_control_hash(&mut tx, &control_token_hash)
+            .await?
+            .ok_or(EnrollmentError::LoginSessionNotFound)?;
+
+        if session.expires_at <= Utc::now().naive_utc() {
+            return Err(EnrollmentError::LoginSessionExpired);
+        }
+
+        if !matches!(session.status.as_str(), "CREATED" | "WAITING_EMULATOR") {
+            tx.commit().await?;
+            return Ok(DispatchLoginResult::AlreadyDispatched);
+        }
+
+        let platform_name = match platform {
+            LoginPlatform::Android => "ANDROID",
+            LoginPlatform::Ios => "IOS",
+        };
+        save_quick_login_target(
+            &mut tx,
+            session.id,
+            session.game_account_id,
+            platform_name,
+            character_name,
+            game_uid,
+        )
+        .await?;
+        let session_no = session.session_no.clone();
+        tx.commit().await?;
+
+        self.dispatch_login_session(&session_no, registry).await
     }
 
     pub async fn select_login_platform(
