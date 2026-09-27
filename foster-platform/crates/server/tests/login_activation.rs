@@ -92,19 +92,27 @@ async fn prepare_detected_identity(
     server_name: Option<&str>,
     game_uid: Option<&str>,
 ) -> anyhow::Result<()> {
+    let identity_verified = character_name.is_some() && server_name.is_some() && game_uid.is_some();
     sqlx::query(
         "UPDATE login_session
          SET status = 'VERIFYING_ACCOUNT',
              detected_masked_account = ?,
              detected_character_name = ?,
              detected_server_name = ?,
-             detected_game_uid = ?
+             detected_game_uid = NULL,
+             expected_server_name = ?,
+             expected_character_name = ?,
+             expected_game_uid = ?,
+             identity_verified = ?
          WHERE session_no = ?",
     )
     .bind(masked_account)
     .bind(character_name)
     .bind(server_name)
+    .bind(server_name)
+    .bind(character_name)
     .bind(game_uid)
+    .bind(identity_verified)
     .bind(session_no)
     .execute(pool)
     .await?;
@@ -217,7 +225,7 @@ async fn existing_trusted_identity_match_activates(pool: MySqlPool) -> anyhow::R
         Some("138****5678"),
         Some("角色A"),
         Some("春之樱"),
-        None,
+        Some("10001"),
     )
     .await?;
 
@@ -387,7 +395,7 @@ async fn session_binding_mismatch_rejects_activation(pool: MySqlPool) -> anyhow:
         None,
         Some("角色A"),
         Some("春之樱"),
-        None,
+        Some("10001"),
     )
     .await?;
 
