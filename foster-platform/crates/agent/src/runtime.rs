@@ -253,19 +253,20 @@ impl<D: EmulatorDriver> AgentRuntime<D> {
                     return Ok(());
                 };
                 let outbox = self.outbox.clone();
+                let journal = self.command_journal.clone();
                 tokio::spawn(async move {
                     let session_no = command.session_no.clone();
                     match executor.select_identity(&command).await {
                         Ok(identity) => {
-                            outbox.push(AgentEvent::LoginIdentityDetected(
-                                LoginIdentityDetected {
-                                    session_no,
-                                    masked_account: identity.masked_account,
-                                    character_name: identity.character_name,
-                                    server_name: identity.server_name,
-                                    game_uid: None,
-                                },
-                            ));
+                            let event = AgentEvent::LoginIdentityDetected(LoginIdentityDetected {
+                                session_no: session_no.clone(),
+                                masked_account: identity.masked_account,
+                                character_name: identity.character_name,
+                                server_name: identity.server_name,
+                                game_uid: None,
+                            });
+                            let _ = journal.finish_login(&session_no, event.clone());
+                            outbox.push(event);
                         }
                         Err(error) => {
                             let _ = executor.cancel(&session_no).await;
