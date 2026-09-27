@@ -8,7 +8,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use foster_protocol::StartLoginCommand;
+use foster_protocol::{SelectLoginIdentityCommand, SelectLoginPlatformCommand, StartLoginCommand};
 use tokio::sync::Mutex;
 
 use super::{LoginExecutor, LoginExecutorError, LoginIdentity, LoginPrepared};
@@ -85,6 +85,20 @@ impl LoginExecutor for FakeLoginExecutor {
             server_name: self.scenario.server_name.clone(),
             game_uid: self.scenario.game_uid.clone(),
         })
+    }
+
+    async fn select_platform(
+        &self,
+        _command: &SelectLoginPlatformCommand,
+    ) -> Result<(), LoginExecutorError> {
+        Ok(())
+    }
+
+    async fn select_identity(
+        &self,
+        _command: &SelectLoginIdentityCommand,
+    ) -> Result<(), LoginExecutorError> {
+        Ok(())
     }
 
     async fn cancel(&self, session_no: &str) -> Result<(), LoginExecutorError> {
