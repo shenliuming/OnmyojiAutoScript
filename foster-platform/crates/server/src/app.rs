@@ -14,7 +14,7 @@ use crate::{
     enrollment::{
         public_api::{
             confirm_login, get_public_login, get_public_login_meta, get_public_login_qr,
-            select_login_platform, submit_login_identity,
+            select_login_platform, start_login, submit_login_identity,
         },
         sse::login_status_events,
     },
@@ -95,6 +95,10 @@ pub fn build_app_with_admin_token(state: AppState, admin_token: Option<String>) 
             get(get_public_login_meta),
         )
         .route("/public/login/{public_token}/qr", get(get_public_login_qr))
+        .route(
+            "/public/login/{control_token}/start",
+            post(start_login),
+        )
         .route(
             "/public/login/{control_token}/identity",
             post(submit_login_identity),
