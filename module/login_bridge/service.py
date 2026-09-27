@@ -86,14 +86,12 @@ class LoginDetectService:
             for _ in range(60):
                 detector.screenshot()
 
-                if detector.appear(detector.I_SA_LOGIN_FORM_APPLE) or detector.appear(
+                target = (
                     detector.I_SA_LOGIN_FORM_ANDROID
-                ):
-                    target = (
-                        detector.I_SA_LOGIN_FORM_ANDROID
-                        if platform == "ANDROID"
-                        else detector.I_SA_LOGIN_FORM_APPLE
-                    )
+                    if platform == "ANDROID"
+                    else detector.I_SA_LOGIN_FORM_APPLE
+                )
+                if detector.appear(target):
                     detector.ui_click_until_disappear(target, interval=0.5)
                     return LoginDetectResponse(
                         ready=True,
