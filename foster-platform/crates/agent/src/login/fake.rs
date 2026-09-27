@@ -97,8 +97,13 @@ impl LoginExecutor for FakeLoginExecutor {
     async fn select_identity(
         &self,
         _command: &SelectLoginIdentityCommand,
-    ) -> Result<(), LoginExecutorError> {
-        Ok(())
+    ) -> Result<LoginIdentity, LoginExecutorError> {
+        Ok(LoginIdentity {
+            masked_account: self.scenario.masked_account.clone(),
+            character_name: self.scenario.character_name.clone(),
+            server_name: self.scenario.server_name.clone(),
+            game_uid: None,
+        })
     }
 
     async fn cancel(&self, session_no: &str) -> Result<(), LoginExecutorError> {
